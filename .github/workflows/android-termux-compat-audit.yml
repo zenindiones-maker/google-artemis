@@ -7,6 +7,14 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/android-termux-compat-audit.yml"
+      - "start.sh"
+      - "artemis/**"
+      - "apps/**"
+      - "mcp_server/**"
+      - "third_party/**"
+      - "packages/**"
+      - "tests/**"
+      - "scripts/**"
   push:
     branches:
       - main
@@ -50,8 +58,6 @@ jobs:
           echo "GOOGLE_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
           echo "GEMINI_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
       - name: Run deterministic Python tests
-        env:
-          TYPER_USE_RICH: "0"
         run: >-
           uv run pytest
           tests/unit
