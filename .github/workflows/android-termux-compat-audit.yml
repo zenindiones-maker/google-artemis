@@ -19,6 +19,7 @@ jobs:
   linux-validation:
     name: Linux dependency and test validation
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -35,16 +36,20 @@ jobs:
         run: uv lock --check
       - name: Resolve dependencies without installing them
         run: uv sync --dry-run --no-install-project
-      - name: Install locked project dependencies
-        run: uv sync --locked
-      - name: Run project tests when available
-        shell: bash
-        run: |
-          if [ -d tests ] || find . -maxdepth 3 -name 'test_*.py' -print -quit | grep -q .; then
-            uv run --no-sync python -m pytest -q
-          else
-            echo "No conventional Python test suite detected."
-          fi
+      - name: Install locked development environment
+        run: uv sync --dev --locked
+      - name: Run deterministic Python tests
+        run: >-
+          uv run pytest
+          tests/unit
+          tests/tools
+          packages/artemis-client/tests
+          -q
+          --cov=artemis
+          --cov=mcp_server
+          --cov=apps/admin_console
+          --cov=third_party
+          --cov-fail-under=60
 
   android-wheel-audit:
     name: Probe Android ARM64 wheel availability
