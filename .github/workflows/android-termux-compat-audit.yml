@@ -52,35 +52,41 @@ jobs:
           --cov-fail-under=60
 
   android-wheel-audit:
-    name: Probe Android ARM64 wheel availability
+    name: Android ARM64 wheels / Python ${{ matrix.python }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
       - name: Probe native dependencies
         shell: bash
         run: |
-          mkdir -p audit
+          mkdir -p audit/wheels
           packages=(numpy scipy opencv-python pyarrow grpcio uvloop httptools cryptography lxml pillow pyzmq cffi greenlet)
-          : > audit/android-arm64-wheels.txt
+          python_tag="$(python -c 'import sys; print(f"{sys.version_info.major}{sys.version_info.minor}")')"
+          report="audit/android-arm64-wheels-cp${python_tag}.txt"
+          : > "$report"
           for package in "${packages[@]}"; do
-            echo "=== $package ===" | tee -a audit/android-arm64-wheels.txt
+            echo "=== $package ===" | tee -a "$report"
             if python -m pip download \
               --only-binary=:all: --no-deps \
               --platform android_24_arm64_v8a \
-              --implementation cp --python-version 314 --abi cp314 \
+              --implementation cp --python-version "$python_tag" --abi "cp${python_tag}" \
               --dest audit/wheels "$package" \
-              >> audit/android-arm64-wheels.txt 2>&1; then
-              echo "RESULT=AVAILABLE" | tee -a audit/android-arm64-wheels.txt
+              >> "$report" 2>&1; then
+              echo "RESULT=ANDROID_WHEEL_AVAILABLE" | tee -a "$report"
             else
-              echo "RESULT=NO_COMPATIBLE_WHEEL_FOUND" | tee -a audit/android-arm64-wheels.txt
+              echo "RESULT=NO_MATCHING_ANDROID_WHEEL" | tee -a "$report"
             fi
           done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: android-arm64-wheel-audit
+          name: android-arm64-wheel-audit-py${{ matrix.python }}
           path: audit/
           if-no-files-found: warn
