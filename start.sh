@@ -25,6 +25,13 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
+# Termux is Linux-based but does not use glibc. Never install desktop Linux
+# binaries or replace user-managed Node.js directories when running on Android.
+IS_TERMUX=false
+if [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *"/com.termux/files/usr" ]]; then
+    IS_TERMUX=true
+fi
+
 echo -e "${BOLD}${CYAN}======================================================${NC}"
 echo -e "${BOLD}${CYAN}      ✨ Artemis Autonomous Mobile Agent UI          ${NC}"
 echo -e "${BOLD}${CYAN}======================================================${NC}"
@@ -144,9 +151,11 @@ fi
 MISSING_CORE=()
 if ! command -v adb >/dev/null 2>&1; then MISSING_CORE+=("adb"); fi
 if ! command -v ffmpeg >/dev/null 2>&1; then MISSING_CORE+=("ffmpeg"); fi
-if ! command -v scrcpy >/dev/null 2>&1; then MISSING_CORE+=("scrcpy"); fi
+if ! command -v scrcpy >/dev/null 2>&1 && [ "${IS_TERMUX}" != true ]; then MISSING_CORE+=("scrcpy"); fi
 
-if [ ${#MISSING_CORE[@]} -gt 0 ]; then
+if [ "${IS_TERMUX}" = true ]; then
+    echo -e "   ${YELLOW}ℹ Termux detected. Skipping desktop OS binary installers; use Termux packages for host tools.${NC}"
+elif [ ${#MISSING_CORE[@]} -gt 0 ]; then
     OS_NAME="$(uname -s)"
     if [ "${OS_NAME}" = "Darwin" ]; then
         export HOMEBREW_NO_AUTO_UPDATE=1
@@ -280,7 +289,7 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
         nvm use 22 >/dev/null 2>&1 || true
     fi
 
-    if ! is_node_compatible; then
+    if ! is_node_compatible && [ "${IS_TERMUX}" != true ]; then
         OS_NAME="$(uname -s)"
         if command -v node >/dev/null 2>&1; then
             echo -e "   ${YELLOW}⚡ Detected Node.js $(node -v 2>/dev/null), but Angular CLI requires Node.js >= v22.22.0. Upgrading Node.js...${NC}"
@@ -329,9 +338,8 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
             OS_SYS="$(uname -s | tr '[:upper:]' '[:lower:]')"
             if [ -n "${NODE_ARCH}" ] && { [ "${OS_SYS}" = "linux" ] || [ "${OS_SYS}" = "darwin" ]; }; then
                 NODE_VER="v22.23.2"
-                NODE_DIR="${HOME}/.local/share/node"
+                NODE_DIR="${HOME}/.local/share/node-${NODE_VER}"
                 echo -e "   ${CYAN}📦 Installing portable Node.js ${NODE_VER} in user space (~/.local)...${NC}"
-                rm -rf "${NODE_DIR}"
                 mkdir -p "${NODE_DIR}" "${HOME}/.local/bin"
                 if curl -fsSL --connect-timeout 5 --max-time 60 "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-${OS_SYS}-${NODE_ARCH}.tar.gz" | tar -xz -C "${NODE_DIR}" --strip-components=1 2>/dev/null; then
                     ln -sf "${NODE_DIR}/bin/node" "${HOME}/.local/bin/node"
@@ -350,7 +358,7 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
         echo -e "   ${YELLOW}🎨 Showcase UI build not found. Compiling Angular Showcase UI...${NC}"
         (
             cd "${SCRIPT_DIR}/apps/showcase_ui"
-            npm install --silent
+            npm ci --silent
             # Auto-patch Angular CLI node version constraint if running on Node 22.22.x (e.g. Cloudtop / Debian)
             CLI_NODE_VERSION="${SCRIPT_DIR}/apps/showcase_ui/node_modules/@angular/cli/src/utilities/node-version.js"
             if [ -f "${CLI_NODE_VERSION}" ]; then
