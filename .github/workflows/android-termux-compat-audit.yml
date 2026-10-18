@@ -35,11 +35,13 @@ jobs:
         run: uv lock --check
       - name: Resolve dependencies without installing them
         run: uv sync --dry-run --no-install-project
+      - name: Install locked project dependencies
+        run: uv sync --locked
       - name: Run project tests when available
         shell: bash
         run: |
           if [ -d tests ] || find . -maxdepth 3 -name 'test_*.py' -print -quit | grep -q .; then
-            uv run --no-sync pytest -q
+            uv run --no-sync python -m pytest -q
           else
             echo "No conventional Python test suite detected."
           fi
