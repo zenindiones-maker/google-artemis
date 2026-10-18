@@ -11,6 +11,7 @@ def test_startup_detects_termux_before_host_tool_installation() -> None:
     assert '"${TERMUX_VERSION:-}"' in source
     assert '"${PREFIX:-}" == *"/com.termux/files/usr"' in source
     assert 'if [ "${IS_TERMUX}" = true ]; then' in source
+    assert 'export PATH="${PREFIX}/bin:${PATH}"' in source
 
 
 def test_termux_never_uses_desktop_linux_node_fallback() -> None:
