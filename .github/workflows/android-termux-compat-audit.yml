@@ -40,6 +40,14 @@ jobs:
         run: uv sync --dry-run --no-install-project
       - name: Install locked development environment
         run: uv sync --dev --locked
+      - name: Configure fake credentials for offline tests
+        shell: bash
+        run: |
+          printf '%s\\n' \
+            'GOOGLE_API_KEY=ci-not-a-real-key' \
+            'GEMINI_API_KEY=ci-not-a-real-key' > .env
+          echo "GOOGLE_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
+          echo "GEMINI_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
       - name: Run deterministic Python tests
         run: >-
           uv run pytest
