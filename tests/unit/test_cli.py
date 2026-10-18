@@ -22,7 +22,7 @@ runner = CliRunner()
 
 def test_cli_help():
     """Verify top-level CLI help returns status 0 and lists core subcommands."""
-    result = runner.invoke(app, ["--help"])
+    result = runner.invoke(app, ["--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "Artemis: Autonomous Multimodal Android Agent" in result.output
     assert "run" in result.output
@@ -41,7 +41,7 @@ def test_cli_version():
 
 def test_cli_run_help():
     """Verify 'artemis run --help' displays execution options."""
-    result = runner.invoke(app, ["run", "--help"])
+    result = runner.invoke(app, ["run", "--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "--profile" in result.output
     assert "--locked-app" in result.output
@@ -52,7 +52,7 @@ def test_cli_run_help():
 
 def test_cli_batch_help():
     """Verify 'artemis batch --help' displays batch options."""
-    result = runner.invoke(app, ["batch", "--help"])
+    result = runner.invoke(app, ["batch", "--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "--file" in result.output
     assert "--delay" in result.output
@@ -155,7 +155,7 @@ def test_run_batch_tasks_applies_pro_tuning_to_agent_config(monkeypatch):
 
 def test_cli_trace_help():
     """Verify 'artemis trace --help' lists trace subcommands."""
-    result = runner.invoke(app, ["trace", "--help"])
+    result = runner.invoke(app, ["trace", "--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "list" in result.output
     assert "view" in result.output
@@ -163,7 +163,7 @@ def test_cli_trace_help():
 
 def test_cli_mcp_help():
     """Verify 'artemis mcp --help' lists server options."""
-    result = runner.invoke(app, ["mcp", "--help"])
+    result = runner.invoke(app, ["mcp", "--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "--type" in result.output
     assert "--generate-config" in result.output
@@ -527,7 +527,7 @@ def test_cli_mcp_install_openclaw_migrates_legacy_plugin_shape(tmp_path, monkeyp
 
 def test_cli_restart_help():
     """Verify 'artemis restart --help' displays lifecycle options."""
-    result = runner.invoke(app, ["restart", "--help"])
+    result = runner.invoke(app, ["restart", "--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "--port" in result.output
     assert "--host" in result.output
@@ -538,7 +538,7 @@ def test_cli_restart_help():
 
 def test_cli_stop_help():
     """Verify 'artemis stop --help' displays stop options."""
-    result = runner.invoke(app, ["stop", "--help"])
+    result = runner.invoke(app, ["stop", "--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "--port" in result.output
     assert "--force" in result.output
@@ -546,7 +546,7 @@ def test_cli_stop_help():
 
 def test_cli_status_help():
     """Verify 'artemis status --help' displays status options."""
-    result = runner.invoke(app, ["status", "--help"])
+    result = runner.invoke(app, ["status", "--help"], color=False, terminal_width=120)
     assert result.exit_code == 0
     assert "--port" in result.output
 
