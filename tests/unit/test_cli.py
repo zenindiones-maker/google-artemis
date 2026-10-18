@@ -14,15 +14,47 @@
 
 """Unit tests for ARTEMIS Unified CLI application."""
 
+import pytest
+from rich.console import Console
+from typer import rich_utils
 from typer.testing import CliRunner
 from artemis.interfaces.cli.main import app
 
 runner = CliRunner()
 
+# Environment variables that make Rich/Typer render differently depending on the
+# host running the tests (CI runners, colour-forcing shells, dumb terminals).
+_HOST_RENDERING_ENV = ("GITHUB_ACTIONS", "FORCE_COLOR", "PY_COLORS", "NO_COLOR", "TTY_COMPATIBLE")
+
+
+@pytest.fixture(autouse=True)
+def deterministic_cli_rendering(monkeypatch):
+    """Render CLI output identically on every host.
+
+    Typer computes ``rich_utils.FORCE_TERMINAL`` at import time and forces a
+    terminal whenever ``GITHUB_ACTIONS``/``FORCE_COLOR``/``PY_COLORS`` is set,
+    which makes Rich embed ANSI escapes inside option names (``--profile``
+    becomes ``-`` + ``-profile`` in separate styles).  ``CliRunner(color=False)``
+    does not affect that console.  Rich also clamps width to 80 columns when
+    ``TERM=dumb``.  Neutralise both so assertions test content, not the host.
+    Rich help rendering itself stays enabled.
+    """
+    for name in _HOST_RENDERING_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", False)
+    # Module-level consoles captured the host environment at import time.
+    from artemis.interfaces.cli.commands import mcp as mcp_cmd
+    from artemis.interfaces.cli.commands import server_lifecycle as sl_cmd
+
+    monkeypatch.setattr(mcp_cmd, "console", Console())
+    monkeypatch.setattr(sl_cmd, "console", Console())
+
 
 def test_cli_help():
     """Verify top-level CLI help returns status 0 and lists core subcommands."""
-    result = runner.invoke(app, ["--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "Artemis: Autonomous Multimodal Android Agent" in result.output
     assert "run" in result.output
@@ -41,7 +73,7 @@ def test_cli_version():
 
 def test_cli_run_help():
     """Verify 'artemis run --help' displays execution options."""
-    result = runner.invoke(app, ["run", "--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     assert "--profile" in result.output
     assert "--locked-app" in result.output
@@ -52,7 +84,7 @@ def test_cli_run_help():
 
 def test_cli_batch_help():
     """Verify 'artemis batch --help' displays batch options."""
-    result = runner.invoke(app, ["batch", "--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["batch", "--help"])
     assert result.exit_code == 0
     assert "--file" in result.output
     assert "--delay" in result.output
@@ -155,7 +187,7 @@ def test_run_batch_tasks_applies_pro_tuning_to_agent_config(monkeypatch):
 
 def test_cli_trace_help():
     """Verify 'artemis trace --help' lists trace subcommands."""
-    result = runner.invoke(app, ["trace", "--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["trace", "--help"])
     assert result.exit_code == 0
     assert "list" in result.output
     assert "view" in result.output
@@ -163,7 +195,7 @@ def test_cli_trace_help():
 
 def test_cli_mcp_help():
     """Verify 'artemis mcp --help' lists server options."""
-    result = runner.invoke(app, ["mcp", "--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["mcp", "--help"])
     assert result.exit_code == 0
     assert "--type" in result.output
     assert "--generate-config" in result.output
@@ -527,7 +559,7 @@ def test_cli_mcp_install_openclaw_migrates_legacy_plugin_shape(tmp_path, monkeyp
 
 def test_cli_restart_help():
     """Verify 'artemis restart --help' displays lifecycle options."""
-    result = runner.invoke(app, ["restart", "--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["restart", "--help"])
     assert result.exit_code == 0
     assert "--port" in result.output
     assert "--host" in result.output
@@ -538,7 +570,7 @@ def test_cli_restart_help():
 
 def test_cli_stop_help():
     """Verify 'artemis stop --help' displays stop options."""
-    result = runner.invoke(app, ["stop", "--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["stop", "--help"])
     assert result.exit_code == 0
     assert "--port" in result.output
     assert "--force" in result.output
@@ -546,7 +578,7 @@ def test_cli_stop_help():
 
 def test_cli_status_help():
     """Verify 'artemis status --help' displays status options."""
-    result = runner.invoke(app, ["status", "--help"], color=False, terminal_width=120)
+    result = runner.invoke(app, ["status", "--help"])
     assert result.exit_code == 0
     assert "--port" in result.output
 
