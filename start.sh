@@ -56,6 +56,10 @@ for p in "${STANDARD_PATHS[@]}"; do
         export PATH="${p}:${PATH}"
     fi
 done
+# Prefer native Termux binaries over any Linux-host tools in user-local directories.
+if [ "${IS_TERMUX}" = true ] && [ -n "${PREFIX:-}" ]; then
+    export PATH="${PREFIX}/bin:${PATH}"
+fi
 
 # Sudo credential and choice state tracking
 SUDO_AUTHENTICATED=false
