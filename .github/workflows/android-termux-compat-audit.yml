@@ -1,0 +1,79 @@
+name: ARTEMIS Android and ARM64 Compatibility Audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/android-termux-compat-audit.yml"
+  push:
+    branches:
+      - main
+      - "ci/android-termux-compat-audit"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-validation:
+    name: Linux dependency and test validation
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Check lockfile
+        run: uv lock --check
+      - name: Resolve dependencies without installing them
+        run: uv sync --dry-run --no-install-project
+      - name: Run project tests when available
+        shell: bash
+        run: |
+          if [ -d tests ] || find . -maxdepth 3 -name 'test_*.py' -print -quit | grep -q .; then
+            uv run --no-sync pytest -q
+          else
+            echo "No conventional Python test suite detected."
+          fi
+
+  android-wheel-audit:
+    name: Probe Android ARM64 wheel availability
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Probe native dependencies
+        shell: bash
+        run: |
+          mkdir -p audit
+          packages=(numpy scipy opencv-python pyarrow grpcio uvloop httptools cryptography lxml pillow pyzmq cffi greenlet)
+          : > audit/android-arm64-wheels.txt
+          for package in "${packages[@]}"; do
+            echo "=== $package ===" | tee -a audit/android-arm64-wheels.txt
+            if python -m pip download \
+              --only-binary=:all: --no-deps \
+              --platform android_24_arm64_v8a \
+              --implementation cp --python-version 314 --abi cp314 \
+              --dest audit/wheels "$package" \
+              >> audit/android-arm64-wheels.txt 2>&1; then
+              echo "RESULT=AVAILABLE" | tee -a audit/android-arm64-wheels.txt
+            else
+              echo "RESULT=NO_COMPATIBLE_WHEEL_FOUND" | tee -a audit/android-arm64-wheels.txt
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-arm64-wheel-audit
+          path: audit/
+          if-no-files-found: warn
