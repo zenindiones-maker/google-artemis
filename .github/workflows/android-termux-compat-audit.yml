@@ -34,6 +34,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Check lockfile
         run: uv lock --check
+      - name: Validate startup shell syntax
+        run: bash -n start.sh
       - name: Resolve dependencies without installing them
         run: uv sync --dry-run --no-install-project
       - name: Install locked development environment
