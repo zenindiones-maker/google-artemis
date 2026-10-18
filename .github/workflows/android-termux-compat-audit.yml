@@ -43,9 +43,10 @@ jobs:
       - name: Configure fake credentials for offline tests
         shell: bash
         run: |
-          printf '%s\\n' \
-            'GOOGLE_API_KEY=ci-not-a-real-key' \
-            'GEMINI_API_KEY=ci-not-a-real-key' > .env
+          cat > .env <<'ENV'
+          GOOGLE_API_KEY=ci-not-a-real-key
+          GEMINI_API_KEY=ci-not-a-real-key
+          ENV
           echo "GOOGLE_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
           echo "GEMINI_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
       - name: Run deterministic Python tests
