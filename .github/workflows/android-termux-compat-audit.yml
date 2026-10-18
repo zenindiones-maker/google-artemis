@@ -50,6 +50,8 @@ jobs:
           echo "GOOGLE_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
           echo "GEMINI_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
       - name: Run deterministic Python tests
+        env:
+          TYPER_USE_RICH: "0"
         run: >-
           uv run pytest
           tests/unit
