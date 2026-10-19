@@ -152,6 +152,8 @@ step optional "native and core imports" native_imports
 step critical "import artemis CLI module" python -c "import artemis.interfaces.cli.main"
 step critical "artemis --version" artemis --version
 step critical "artemis --help" artemis --help
+step optional "startup metrics (artemis --help)" python "${METRICS}" startup --out "${OUT}" \
+    --runs 5 --warmup 1 --environment "Termux-in-Docker aarch64 on ubuntu-24.04-arm (CI, not a device)"
 step optional "host tools" bash -c 'adb version | head -n 1; ffmpeg -version | head -n 1; node -v; uv --version'
 step optional "pip freeze" python -m pip freeze
 step optional "disk usage" bash -c 'du -sh "${ARTEMIS_VENV}" "${HOME}/.cache/pip" "${PREFIX}" "${HOME}/.cargo" 2>/dev/null; df -h "${HOME}" 2>/dev/null' 
@@ -163,6 +165,9 @@ step optional "disk usage" bash -c 'du -sh "${ARTEMIS_VENV}" "${HOME}/.cache/pip
     echo
     echo "## Disk usage during install_termux.sh (peak / final)"
     cat "${OUT}/disk-usage.md" 2>/dev/null || echo "no disk report"
+    echo
+    echo "## Startup metrics (artemis --help)"
+    cat "${OUT}/startup-metrics.md" 2>/dev/null || echo "no startup metrics"
     echo
     echo "## Import results"
     grep -h -E '^IMPORT_(OK|FAIL)' "${OUT}"/logs/*.log 2>/dev/null | sed 's/^/- /' || true
