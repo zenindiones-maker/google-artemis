@@ -86,6 +86,11 @@ class LazyModule:
     """Proxy that imports ``module`` on first attribute access.
 
     Failures are not cached, so installing the extra later in the same process works.
+
+    Contract when the optional module is missing: any attribute access, including
+    ``hasattr(proxy, name)``, raises :class:`OptionalDependencyError` (an ImportError
+    with an actionable message); it never silently returns False. Use
+    :meth:`is_available` to probe without raising.
     """
 
     __slots__ = ("_lazy_module", "_lazy_feature", "_lazy_extra", "_lazy_loaded")
@@ -106,6 +111,14 @@ class LazyModule:
             )
             object.__setattr__(self, "_lazy_loaded", loaded)
         return loaded
+
+    def is_available(self) -> bool:
+        """Return True if the optional module can be imported (never raises)."""
+        try:
+            self._load()
+        except OptionalDependencyError:
+            return False
+        return True
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._load(), name)
