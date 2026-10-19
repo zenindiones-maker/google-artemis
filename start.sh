@@ -51,7 +51,12 @@ STANDARD_PATHS=(
     "${HOME}/Library/Android/sdk/platform-tools"
     "${HOME}/Android/Sdk/platform-tools"
 )
-for p in "${STANDARD_PATHS[@]}"; do
+# ARTEMIS_SKIP_STANDARD_PATHS=1 keeps PATH exactly as provided (hermetic tests and
+# reproducible/locked-down environments).
+if [ "${ARTEMIS_SKIP_STANDARD_PATHS:-0}" = "1" ]; then
+    STANDARD_PATHS=()
+fi
+for p in "${STANDARD_PATHS[@]+"${STANDARD_PATHS[@]}"}"; do
     if [ -d "${p}" ] && [[ ":${PATH}:" != *":${p}:"* ]]; then
         export PATH="${p}:${PATH}"
     fi
@@ -129,6 +134,13 @@ is_node_compatible() {
 
 # 2. Check or install uv (Fast Python package manager)
 if ! command -v uv >/dev/null 2>&1; then
+    if [ "${IS_TERMUX}" = true ]; then
+        # The Astral installer ships glibc/musl Linux binaries that do not run on
+        # Android's bionic libc. Termux packages a native uv build instead.
+        echo -e "${YELLOW}⚠ uv not found. In Termux, install the native package and re-run:${NC}"
+        echo -e "      ${BOLD}pkg install uv${NC}"
+        exit 1
+    fi
     echo -e "${YELLOW}⚡ uv not found. Installing Astral uv...${NC}"
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
@@ -145,6 +157,9 @@ if ! command -v adb >/dev/null 2>&1; then
         "${HOME}/.local/share/platform-tools" \
         "/opt/homebrew/bin" \
         "/usr/local/bin"; do
+        if [ "${ARTEMIS_SKIP_STANDARD_PATHS:-0}" = "1" ] && [[ "${candidate}" != "${HOME}"/* ]]; then
+            continue
+        fi
         if [ -n "${candidate}" ] && [ -x "${candidate}/adb" ]; then
             export PATH="${candidate}:${PATH}"
             break
