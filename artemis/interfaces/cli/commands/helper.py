@@ -44,6 +44,17 @@ SerialOption = Annotated[
 
 def _resolve_serial(serial: str | None) -> str:
     if serial:
+        # An explicit serial must be attached and authorized; otherwise a typo or a
+        # dropped wireless connection looked like "helper not installed" (exit 0).
+        attached = {d.serial: d.state for d in device_pool.list_devices()}
+        if serial not in attached:
+            typer.secho(
+                f"Device '{serial}' is not attached (see: adb devices -l).", fg=typer.colors.RED
+            )
+            raise typer.Exit(code=1)
+        if attached[serial] != "device":
+            typer.secho(f"Device '{serial}' is {attached[serial]}, not ready.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
         return serial
     ready = [d.serial for d in device_pool.get_ready_devices()]
     if len(ready) == 1:
