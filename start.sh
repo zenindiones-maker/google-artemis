@@ -429,7 +429,12 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
         fi
     fi
 
-    if is_node_compatible; then
+    if [ "${IS_TERMUX}" = true ]; then
+        # Never run npm ci / ng build on the phone (slow, heavy, native deps). Termux
+        # consumes a prebuilt Showcase UI bundle produced off-device instead.
+        echo -e "   ${YELLOW}⚠ Showcase UI build not found. Termux does not compile the UI on-device.${NC}"
+        echo -e "      Copy a prebuilt bundle into ${BOLD}apps/showcase_ui/dist/${NC}; the CLI works without it."
+    elif is_node_compatible; then
         echo -e "   ${GREEN}✓ Node.js $(node -v 2>/dev/null) and npm $(npm -v 2>/dev/null) ready.${NC}"
         echo -e "   ${YELLOW}🎨 Showcase UI build not found. Compiling Angular Showcase UI...${NC}"
         (

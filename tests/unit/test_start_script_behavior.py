@@ -225,7 +225,8 @@ def test_termux_with_old_node_suggests_nodejs_lts_without_downloading(tmp_path: 
     result = box.run()
 
     assert result.returncode == 0, result.stderr
-    assert "pkg install nodejs-lts" in result.stdout
+    # Since E1-final, Termux never compiles the UI, so no Node.js hint is printed.
+    assert "does not compile the UI on-device" in result.stdout
     assert box.calls("curl") == []
     assert box.calls("npm") == []
     assert not any((box.home / ".local" / "share").glob("node*"))
