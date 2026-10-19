@@ -1,0 +1,15 @@
+# Packages the Termux probe compiles from source (no Termux pkg, no android wheel on PyPI).
+# Single source of truth for scripts/termux_ci_probe.sh and scripts/install_termux.sh --wheelhouse.
+pydantic-core
+jiter
+orjson
+ormsgpack
+uuid-utils
+tiktoken
+watchfiles
+zstandard
+regex
+tornado
+httptools
+uvloop
+pyyaml

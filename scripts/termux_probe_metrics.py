@@ -456,6 +456,68 @@ def cmd_startup(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- CI wheelhouse manifest ----------------------------------------------------
+
+
+def write_wheelhouse_manifest(
+    directory: Path,
+    *,
+    source_commit: str,
+    run_id: str,
+    python_version: str,
+    termux_packages: dict[str, str],
+) -> str:
+    """Write manifest.json and SHA256SUMS (covering every file); return sha256(SHA256SUMS)."""
+    import hashlib
+    import json
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import verify_artifacts as va
+
+    wheels = []
+    for wheel in sorted(directory.glob("*.whl")):
+        info = va.parse_wheel(wheel.name)
+        if not va.wheel_platform_ok(info["plat"]):
+            raise ValueError(f"{wheel.name}: platform {info['plat']} is not android arm64 or pure")
+        wheels.append({"file": wheel.name, "name": info["canonical"], "version": info["version"],
+                       "tags": f"{info['py']}-{info['abi']}-{info['plat']}", "bytes": wheel.stat().st_size,
+                       "sha256": va.sha256(wheel)})  # fmt: skip
+    manifest = {
+        "schema": 1,
+        "source_commit": source_commit,
+        "run_id": run_id,
+        "python": python_version,
+        "termux_packages": termux_packages,
+        "total_bytes": sum(w["bytes"] for w in wheels),
+        "wheels": wheels,
+    }
+    (directory / "manifest.json").write_text(
+        json.dumps(manifest, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    lines = [
+        f"{va.sha256(f)}  {f.name}"
+        for f in sorted(directory.iterdir())
+        if f.is_file() and f.name != "SHA256SUMS"
+    ]
+    (directory / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return hashlib.sha256((directory / "SHA256SUMS").read_bytes()).hexdigest()
+
+
+def cmd_wheelhouse_manifest(args: argparse.Namespace) -> int:
+    termux: dict[str, str] = {}
+    if args.termux_packages:
+        for line in args.termux_packages.read_text(encoding="utf-8").splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                termux[parts[0]] = parts[1]
+    digest = write_wheelhouse_manifest(
+        args.dir, source_commit=args.source_commit, run_id=args.run_id,
+        python_version=args.python_version, termux_packages=termux,
+    )  # fmt: skip
+    print(f"SHA256SUMS sha256: {digest}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -503,6 +565,16 @@ def main(argv: list[str] | None = None) -> int:
     startup.add_argument("--timeout", type=float, default=300.0)
     startup.add_argument("--environment", help="label, e.g. 'Termux-in-Docker aarch64 (CI)'")
     startup.set_defaults(func=cmd_startup)
+
+    wh = sub.add_parser(
+        "wheelhouse-manifest", help="write manifest.json + SHA256SUMS for a wheelhouse"
+    )
+    wh.add_argument("--dir", type=Path, required=True)
+    wh.add_argument("--source-commit", required=True)
+    wh.add_argument("--run-id", required=True)
+    wh.add_argument("--python-version", required=True)
+    wh.add_argument("--termux-packages", type=Path, help="'name version' lines (dpkg-query)")
+    wh.set_defaults(func=cmd_wheelhouse_manifest)
 
     args = parser.parse_args(argv)
     return args.func(args)
