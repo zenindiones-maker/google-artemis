@@ -36,7 +36,10 @@ dependencies = [
     # LLM Providers & GenAI SDKs
     "google-genai>=2.22.0",
     "langchain-google-genai>=4.0.0",
-    "langchain-google-vertexai>=3.0.0",
+    # Vertex AI provider. Skipped on Android/Termux only: it pins pyarrow<24 while
+    # Termux ships python-pyarrow 26 (see docs/termux.md). Desktop installs are
+    # unchanged; on Android it can still be requested with the "vertex" extra.
+    "langchain-google-vertexai>=3.0.0; sys_platform != 'android'",
     "langchain-openai>=1.0.0",
     # Configuration, Models & Validation
     "pydantic>=2.7.0",
@@ -77,6 +80,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Explicit opt-in for the Vertex AI provider (already part of the default install
+# everywhere except Android/Termux).
+vertex = [
+    "langchain-google-vertexai>=3.0.0",
+]
 dev = [
     "ruff>=0.15.2",
     "pytest>=8.4.1",

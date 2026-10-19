@@ -34,6 +34,19 @@ from third_party.mobile_use.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+VERTEX_AI_MISSING_MESSAGE = (
+    "The 'vertexai' LLM provider is selected but langchain-google-vertexai is not "
+    "installed. Install the Vertex AI extra with: uv sync --extra vertex "
+    "(or: pip install 'artemis[vertex]'), or choose another provider. "
+    "On Android/Termux this extra is not installed by default because it requires "
+    "pyarrow<24, which conflicts with Termux's python-pyarrow."
+)
+
+
+class VertexAIUnavailableError(ImportError):
+    """Raised when the Vertex AI provider is selected without its optional dependency."""
+
+
 class ModelProvider(StrEnum):
     GOOGLE = "google"
     GEMINI = "google"
@@ -259,11 +272,14 @@ class ModelFactory:
             return ChatGoogleGenerativeAI(**{k: v for k, v in kwargs.items() if v is not None})
 
         elif provider == ModelProvider.VERTEX_AI:
-            from langchain_google_vertexai import (
-                ChatVertexAI,
-                HarmBlockThreshold,
-                HarmCategory,
-            )
+            try:
+                from langchain_google_vertexai import (
+                    ChatVertexAI,
+                    HarmBlockThreshold,
+                    HarmCategory,
+                )
+            except ImportError as exc:
+                raise VertexAIUnavailableError(VERTEX_AI_MISSING_MESSAGE) from exc
 
             kwargs = {
                 "model_name": endpoint.model_name,
