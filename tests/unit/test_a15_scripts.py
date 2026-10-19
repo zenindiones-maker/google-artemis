@@ -138,22 +138,13 @@ def test_hanging_step_times_out_and_is_reported(tmp_path: Path) -> None:
 
 
 def test_validation_script_contains_no_network_or_upload_commands() -> None:
-    body = "\n".join(l for l in VALIDATE.read_text().splitlines() if not l.lstrip().startswith("#"))
-    for word in (
-        *NETWORK_TOOLS,
-        "http://",
-        "https://",
-        "pip install",
-        "pkg install",
-        "adb pair",
-        "adb connect",
-    ):
-        assert not re.search(rf"(^|\s|\"){re.escape(word)}", body.replace("echo", "")) or word in (
-            "adb pair",
-            "adb connect",
-        )
-    # pairing commands appear only inside the printed help text, never executed
-    assert re.search(r"^\s*adb (pair|connect)", body, re.M) is None
+    code = [ln for ln in VALIDATE.read_text().splitlines() if not ln.lstrip().startswith("#")]
+    words = re.compile(
+        r"\b(curl|wget|nc|ssh|scp|rsync|ftp|telnet|pip install|pkg install)\b|https?://"
+    )
+    assert [ln for ln in code if words.search(ln)] == []
+    # Pairing commands only appear in the printed help text (indented heredoc), never run.
+    assert [ln for ln in code if re.match(r"^\s*adb (pair|connect)\b", ln)] == []
 
 
 def test_preflight_is_read_only(tmp_path: Path) -> None:
