@@ -51,7 +51,6 @@ import asyncio
 from typing import Any
 
 import anyio
-from mcp.shared.memory import create_connected_server_and_client_session
 
 from artemis.mcp.action_types import ActionResult, ObserveResult
 from third_party.mobile_use.utils.logger import get_logger
@@ -75,6 +74,12 @@ class ActionSession:
         self._requests: asyncio.Queue = asyncio.Queue()
 
     async def _run(self) -> None:
+        # Imported here: the ``mcp`` package's ``__init__`` pulls in its server stack
+        # (uvicorn/starlette), which plain CLI startup does not need.
+        from mcp.shared.memory import (  # pylint: disable=import-outside-toplevel
+            create_connected_server_and_client_session,
+        )
+
         try:
             # Enter and exit strictly within this task (anyio cancel-scope rule).
             async with create_connected_server_and_client_session(self._server) as session:

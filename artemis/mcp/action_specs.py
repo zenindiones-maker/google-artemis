@@ -60,14 +60,19 @@ from dataclasses import dataclass
 from functools import cache
 import inspect
 import types
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 from langchain_core.tools import StructuredTool
-from mcp.types import CallToolResult
 from pydantic import Field, create_model
 
 from artemis.core.tool_declaration import ToolDeclaration
 from artemis.mcp.action_types import ActionResult
+
+if TYPE_CHECKING:
+    # The ``mcp`` package's ``__init__`` imports its server stack (uvicorn, starlette,
+    # sse-starlette). Only the FastMCP wire handlers need the real class, so it is
+    # imported inside ``make_wire_handler``; prompts/specs stay import-light.
+    from mcp.types import CallToolResult
 
 __all__ = [
     "ACTION_SPECS",
@@ -827,9 +832,9 @@ def wire_dialects() -> tuple[ActionSpec, ...]:
 def make_wire_handler(
     spec: ActionSpec,
     actuator: Any,
-    wrap: Callable[[ActionResult], CallToolResult],
-    wrap_exception: Callable[[str, Exception], CallToolResult],
-) -> Callable[..., Awaitable[CallToolResult]]:
+    wrap: "Callable[[ActionResult], CallToolResult]",
+    wrap_exception: "Callable[[str, Exception], CallToolResult]",
+) -> "Callable[..., Awaitable[CallToolResult]]":
     """Builds the FastMCP tool function for one wire dialect.
 
     The returned coroutine carries an explicit ``__signature__`` so FastMCP derives
@@ -837,6 +842,8 @@ def make_wire_handler(
     same ``Annotated[CallToolResult, ActionResult]`` return annotation so the
     structured-output schema is unchanged.
     """
+    from mcp.types import CallToolResult  # pylint: disable=import-outside-toplevel
+
     wire = spec.wire
     if wire is None:
         raise ValueError(f"Action '{spec.name}' has no wire dialect.")
