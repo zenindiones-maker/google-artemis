@@ -52,3 +52,8 @@ def test_rust_extensions_get_an_android_api_level_for_maturin():
 def test_opencv_runtime_dependency_dbus_is_installed():
     source = PROBE.read_text(encoding="utf-8")
     assert "install python-opencv-python dbus" in source
+
+
+def test_numpy_dependent_sdists_build_against_termux_numpy():
+    source = PROBE.read_text(encoding="utf-8")
+    assert "--no-build-isolation bottleneck numexpr" in source

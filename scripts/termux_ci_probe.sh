@@ -112,6 +112,13 @@ export IMAGEIO_FFMPEG_EXE="${PREFIX}/bin/ffmpeg"
 # API level"). Use the level the Termux Python was built for.
 ANDROID_API_LEVEL="$(python -c 'import sys; print(sys.getandroidapilevel())')"
 export ANDROID_API_LEVEL
+# sdists that need numpy at build time (bottleneck, numexpr: pulled in by
+# langchain-google-vertexai) otherwise download and compile numpy from source in
+# an isolated build env, which fails on bionic (observed: undeclared cpowf/cexpl
+# in npy_math_complex.c). Build them against the Termux python-numpy instead.
+step optional "build tools for no-isolation builds" python -m pip install setuptools wheel "versioneer[toml]" meson-python ninja
+step optional "numpy-dependent sdists without build isolation" \
+    python -m pip install --no-build-isolation bottleneck numexpr
 step critical "pip install ARTEMIS (non-locked, Termux system packages reused)" \
     python -m pip install --prefer-binary "${WORK}"
 step optional "pip check" python -m pip check
