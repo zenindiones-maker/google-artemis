@@ -45,7 +45,7 @@ def test_probe_never_uses_real_credentials_or_secrets():
 
 def test_probe_exercises_the_documented_install_script():
     source = PROBE.read_text(encoding="utf-8")
-    assert re.search(r'step critical "scripts/install_termux.sh" bash', source)
+    assert re.search(r'step critical "scripts/install_termux.sh" (env PIP_NO_CACHE_DIR=1 )?bash', source)
 
 
 def test_installer_handles_observed_termux_build_blockers():

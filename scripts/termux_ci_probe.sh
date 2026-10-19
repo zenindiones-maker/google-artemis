@@ -96,20 +96,56 @@ tar -C "${REPO}" --exclude=.git --exclude=.venv --exclude=node_modules -cf - . |
 # ./artemis checkout would shadow the installed package as a namespace package.
 cd "$(mktemp -d)" || exit 1
 
+METRICS="${WORK}/scripts/termux_probe_metrics.py"
+CONSTRAINTS="${WORK}/requirements/termux-constraints.txt"
+# Packages that the Termux probe observed being compiled from source.
+SOURCE_BUILT=(pydantic-core jiter orjson ormsgpack uuid-utils tiktoken watchfiles zstandard
+    regex tornado httptools uvloop pyyaml)
+
+# --- Probe-only: per-package source builds (before the real install) ---------
+# Same Termux packages and build environment as install_termux.sh, but each
+# package is built alone so it gets its own wall time, result and build-temp disk
+# usage. install_termux.sh still runs afterwards, with the pip cache disabled, so
+# the real install path is validated independently of these builds.
+mapfile -t MAIN_PKGS < <(grep -vE '^(#|$)' "${WORK}/requirements/termux-pkg.txt" | awk '$2 != "x11" && $3 != "x11" {print $1}')
+mapfile -t X11_PKGS < <(grep -vE '^(#|$)' "${WORK}/requirements/termux-pkg.txt" | awk '$2 == "x11" || $3 == "x11" {print $1}')
+step critical "probe: Termux packages (main)" "${APT[@]}" install "${MAIN_PKGS[@]}"
+step critical "probe: Termux packages (x11)" bash -c "${APT[*]} update && ${APT[*]} install ${X11_PKGS[*]}"
+ANDROID_API_LEVEL="$(python -c 'import sys; print(sys.getandroidapilevel())')"
+export ANDROID_API_LEVEL
+for lib in "${PREFIX}/lib/libtermux-exec-ld-preload.so" "${PREFIX}/lib/libtermux-exec.so"; do
+    if [ -f "${lib}" ]; then
+        export LD_PRELOAD="${lib}"
+        break
+    fi
+done
+step critical "probe: build venv" python -m venv --system-site-packages "${HOME}/build-venv"
+step critical "probe: per-package source builds" \
+    "${HOME}/build-venv/bin/python" "${METRICS}" build-each --constraints "${CONSTRAINTS}" \
+    --out "${OUT}/builds" --python "${HOME}/build-venv/bin/python" "${SOURCE_BUILT[@]}"
+
+# --- Real install path, with peak disk sampling -------------------------------
 # Exercise exactly the documented install path (pinned pkg list + constraints).
-# It handles ANDROID_API_LEVEL for maturin, termux-exec for './configure'
-# scripts and dbus for python-opencv-python (all observed blockers).
 export ARTEMIS_VENV="${HOME}/venv"
 # Timestamped pip log (pip reads PIP_LOG as --log) to measure per-package build times.
 export PIP_LOG="${OUT}/logs/pip-timestamped.log"
-step critical "scripts/install_termux.sh" bash "${WORK}/scripts/install_termux.sh"
+STOP_FILE="${OUT}/sampler.stop"
+python "${METRICS}" sample --out "${OUT}/disk-samples.csv" --stop-file "${STOP_FILE}" \
+    --interval 5 "${HOME}" "${PREFIX}" "${TMPDIR:-${PREFIX}/tmp}" "${HOME}/.cargo" "${HOME}/.cache/pip" &
+SAMPLER_PID=$!
+step critical "scripts/install_termux.sh" env PIP_NO_CACHE_DIR=1 bash "${WORK}/scripts/install_termux.sh"
+touch "${STOP_FILE}"
+wait "${SAMPLER_PID}" 2>/dev/null || true
+step optional "disk usage peak/final" python "${METRICS}" summarize "${OUT}/disk-samples.csv" --out "${OUT}/disk-usage.md"
 # shellcheck disable=SC1091
 . "${ARTEMIS_VENV}/bin/activate"
 export IMAGEIO_FFMPEG_EXE="${PREFIX}/bin/ffmpeg"
 step optional "platform info" platform_info
 step optional "installed Termux package versions" bash -c \
     "grep -vE '^(#|\$)' '${WORK}/requirements/termux-pkg.txt' | awk '{print \$1}' | xargs dpkg-query -W -f='\${Package} \${Version} \${Installed-Size}\n'"
-step optional "pip check" python -m pip check
+step critical "pip check" python -m pip check
+step critical "every constraint installed at its exact version" \
+    python "${METRICS}" verify --constraints "${CONSTRAINTS}"
 step optional "native and core imports" native_imports
 step critical "import artemis CLI module" python -c "import artemis.interfaces.cli.main"
 step critical "artemis --version" artemis --version
@@ -119,6 +155,12 @@ step optional "pip freeze" python -m pip freeze
 step optional "disk usage" bash -c 'du -sh "${ARTEMIS_VENV}" "${HOME}/.cache/pip" "${PREFIX}" "${HOME}/.cargo" 2>/dev/null; df -h "${HOME}" 2>/dev/null' 
 
 {
+    echo
+    echo "## Source builds (one at a time, probe-only)"
+    cat "${OUT}/builds/source-builds.md" 2>/dev/null || echo "no build report"
+    echo
+    echo "## Disk usage during install_termux.sh (peak / final)"
+    cat "${OUT}/disk-usage.md" 2>/dev/null || echo "no disk report"
     echo
     echo "## Import results"
     grep -h -E '^IMPORT_(OK|FAIL)' "${OUT}"/logs/*.log 2>/dev/null | sed 's/^/- /' || true
