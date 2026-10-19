@@ -51,3 +51,10 @@ def test_conftest_provides_a_non_secret_placeholder_key() -> None:
     assert "os.environ.setdefault(_var, PLACEHOLDER_API_KEY)" in source
     for var in ("GOOGLE_API_KEY", "GEMINI_API_KEY"):
         assert os.environ.get(var)
+
+
+def test_all_actions_are_pinned_to_full_commit_sha() -> None:
+    uses = re.findall(r"uses:\s*([^\s#]+)", CI.read_text(encoding="utf-8"))
+    assert uses
+    for ref in uses:
+        assert re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", ref), ref
