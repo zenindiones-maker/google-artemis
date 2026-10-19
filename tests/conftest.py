@@ -19,11 +19,20 @@ integration and end-to-end trees remain directly runnable, and receive stable
 markers here so callers can select them without relying on filename patterns.
 """
 
+import os
 from pathlib import Path
 
-import pytest
+# Deterministic tests must not need a real credential. Several unit tests build a
+# Gemini client (which validates that a key is present) without mocking the env; give
+# them an obvious non-secret placeholder unless the caller already set one. This runs
+# before any artemis import, so CI and local runs behave the same with no secrets.
+PLACEHOLDER_API_KEY = "test-placeholder-not-a-real-key"
+for _var in ("GOOGLE_API_KEY", "GEMINI_API_KEY"):
+    os.environ.setdefault(_var, PLACEHOLDER_API_KEY)
 
-from artemis.drivers.mock.mock_driver import MockDeviceDriver
+import pytest  # noqa: E402
+
+from artemis.drivers.mock.mock_driver import MockDeviceDriver  # noqa: E402
 
 
 @pytest.fixture
