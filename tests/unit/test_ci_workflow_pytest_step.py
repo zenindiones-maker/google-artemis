@@ -58,3 +58,10 @@ def test_all_actions_are_pinned_to_full_commit_sha() -> None:
     assert uses
     for ref in uses:
         assert re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", ref), ref
+
+
+def test_pytest_runs_on_push_and_pull_request_too() -> None:
+    # Droppable commit (pending Luiz's decision): before it, pytest ran only on
+    # workflow_dispatch, so green push/PR runs never executed the test suite.
+    for step in _pytest_steps(_workflow()):
+        assert "if" not in step
