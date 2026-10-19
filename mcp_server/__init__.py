@@ -14,8 +14,22 @@
 
 """Universal Model Context Protocol (MCP) Server for ARTEMIS."""
 
-from mcp_server.base import mcp
-from mcp_server.server import main
-import mcp_server.tools  # noqa: F401
+from importlib import import_module
+from typing import Any
 
 __all__ = ["mcp", "main"]
+
+
+def __getattr__(name: str) -> Any:
+    """Load the FastMCP server lazily.
+
+    ``mcp`` (with its tools registered) and ``main`` pull in the ``mcp`` package's
+    server stack (uvicorn/starlette). Light helpers such as ``mcp_server.utils``
+    must stay importable without it, e.g. for ``artemis --help``.
+    """
+    if name == "mcp":
+        import_module("mcp_server.tools")
+        return import_module("mcp_server.base").mcp
+    if name == "main":
+        return import_module("mcp_server.server").main
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

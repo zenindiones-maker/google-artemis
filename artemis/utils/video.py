@@ -28,7 +28,9 @@ import time
 import subprocess
 from typing import Any
 
-import cv2
+from artemis.utils.optional_deps import LazyModule
+
+cv2 = LazyModule("cv2", "Video frame extraction")
 
 from artemis.utils.cython_compat import CyFunctionDetector
 from third_party.mobile_use.utils.logger import get_logger

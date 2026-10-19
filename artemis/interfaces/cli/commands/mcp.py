@@ -23,10 +23,7 @@ import threading
 import tomllib
 from typing import Annotated
 
-from mcp_server.base import mcp as agent_mcp
-import mcp_server.tools  # noqa: F401
 from mcp_server.utils import env_utils
-from artemis.mcp.adb_server import mcp as adb_mcp
 from artemis.runtime import shutdown_awake_service, start_awake_service
 from third_party.mobile_use.utils.logger import get_logger
 from rich.console import Console
@@ -828,12 +825,18 @@ def mcp_command(
     try:
         st = server_type.lower()
         if st in ("agent", "mobile", "artemis", "default"):
+            # Server stacks are imported only when a server is actually started.
+            from mcp_server.base import mcp as agent_mcp
+            import mcp_server.tools  # noqa: F401
+
             logger.info(f"Starting Artemis Mobile Agent MCP Server over {transport}...")
             if transport.lower() == "sse":
                 agent_mcp.run(transport="sse", host=host, port=port)
             else:
                 agent_mcp.run(transport="stdio")
         elif st == "adb":
+            from artemis.mcp.adb_server import mcp as adb_mcp
+
             if transport.lower() == "sse":
                 logger.info(f"Starting Artemis ADB MCP Server over {transport}...")
                 adb_mcp.run(transport="sse", host=host, port=port)

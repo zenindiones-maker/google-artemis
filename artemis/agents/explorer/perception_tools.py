@@ -29,7 +29,9 @@ from pathlib import Path
 import re
 from typing import TYPE_CHECKING, Any
 
-import cv2
+from artemis.utils.optional_deps import LazyModule
+
+cv2 = LazyModule("cv2", "Explorer perception tools (crop/zoom)")
 
 from artemis.agents.explorer.geometry import norm_to_pixel, pixel_to_norm
 from artemis.agents.explorer.screen_index import ScreenElement, ScreenIndex, normalize_text

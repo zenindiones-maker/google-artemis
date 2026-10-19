@@ -18,11 +18,22 @@ from pathlib import Path
 import queue
 import subprocess
 import time
-from typing import IO
+from typing import IO, TYPE_CHECKING
 
-import jupyter_client
-from jupyter_client.blocking import BlockingKernelClient
-from zmq import ZMQError
+from artemis.utils.optional_deps import LazyModule
+
+if TYPE_CHECKING:
+    from jupyter_client.blocking import BlockingKernelClient
+
+# Heavy (pyzmq/tornado/ipykernel) and only needed when code is actually executed.
+jupyter_client = LazyModule("jupyter_client", "The image processor's Python executor")
+_zmq = LazyModule("zmq", "The image processor's Python executor")
+
+
+def _kernel_errors() -> tuple[type[BaseException], ...]:
+    """Errors that mean the kernel connection is unusable (resolved lazily)."""
+    return (OSError, RuntimeError, _zmq.ZMQError)
+
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +120,7 @@ class PythonExecutor:
         assert self.km is not None and self.kc is not None
         try:
             self.km.interrupt_kernel()
-        except (OSError, RuntimeError, ZMQError) as e:
+        except _kernel_errors() as e:
             logger.error("Failed to interrupt kernel after timeout: %s", e)
             return False
         deadline = time.monotonic() + INTERRUPT_DRAIN_TIMEOUT_S
@@ -195,7 +206,7 @@ class PythonExecutor:
         if kc is not None:
             try:
                 kc.stop_channels()
-            except (OSError, RuntimeError, ZMQError) as e:
+            except _kernel_errors() as e:
                 logger.error("Failed to stop kernel channels: %s", e)
 
         if km is not None:

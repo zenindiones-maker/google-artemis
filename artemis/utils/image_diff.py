@@ -19,8 +19,10 @@ import logging
 import math
 import time
 
-import cv2
-import numpy as np
+from artemis.utils.optional_deps import LazyModule
+
+cv2 = LazyModule("cv2", "Screen change detection")
+np = LazyModule("numpy", "Screen change detection")
 
 logger = logging.getLogger(__name__)
 

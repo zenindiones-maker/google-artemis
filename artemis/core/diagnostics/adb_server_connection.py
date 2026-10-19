@@ -65,8 +65,12 @@ class AdbServerConnectionManager:
     def status(self) -> dict[str, Any]:
         return {"endpoint": self.current_endpoint().to_dict()}
 
-    def synchronize_environment(self) -> AdbServerEndpoint:
-        """Align subprocess and Python ADB clients with the configured endpoint."""
+    def synchronize_environment(self, *, announce: bool = True) -> AdbServerEndpoint:
+        """Align subprocess and Python ADB clients with the configured endpoint.
+
+        ``announce=False`` (used at import time) logs at debug level only, so that
+        importing Artemis (e.g. ``artemis --help``) prints nothing.
+        """
         socket_endpoint = self._endpoint_from_socket(os.environ.get("ADB_SERVER_SOCKET"))
         has_explicit_host = bool(os.environ.get("ADB_HOST") or os.environ.get("ADB_PORT"))
         endpoint = (
@@ -74,7 +78,7 @@ class AdbServerConnectionManager:
             if socket_endpoint is not None and not has_explicit_host
             else self.current_endpoint()
         )
-        self._activate(endpoint)
+        self._activate(endpoint, announce=announce)
         return endpoint
 
     async def connect(
@@ -294,13 +298,15 @@ class AdbServerConnectionManager:
             return None
 
     @staticmethod
-    def _activate(endpoint: AdbServerEndpoint) -> None:
+    def _activate(endpoint: AdbServerEndpoint, *, announce: bool = True) -> None:
         settings.ADB_HOST = endpoint.host
         settings.ADB_PORT = endpoint.port
         endpoint.apply_to_environment()
-        logger.info(
-            f"Activated {endpoint.mode} ADB server endpoint {endpoint.host}:{endpoint.port}"
-        )
+        message = f"Activated {endpoint.mode} ADB server endpoint {endpoint.host}:{endpoint.port}"
+        if announce:
+            logger.info(message)
+        else:
+            logger.debug(message)
 
     def _persist(self, endpoint: AdbServerEndpoint) -> None:
         for env_file in self._environment_files():
@@ -327,4 +333,4 @@ class AdbServerConnectionManager:
 
 
 adb_server_connection = AdbServerConnectionManager()
-adb_server_connection.synchronize_environment()
+adb_server_connection.synchronize_environment(announce=False)

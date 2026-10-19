@@ -14,7 +14,9 @@
 
 import json
 from pathlib import Path
-import cv2
+from artemis.utils.optional_deps import LazyModule
+
+cv2 = LazyModule("cv2", "Image canvas annotation")
 
 
 class ImageCanvas:
