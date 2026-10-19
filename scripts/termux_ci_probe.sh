@@ -121,6 +121,29 @@ step optional "numpy-dependent sdists without build isolation" \
     python -m pip install --no-build-isolation bottleneck numexpr
 step critical "pip install ARTEMIS (non-locked, Termux system packages reused)" \
     python -m pip install --prefer-binary "${WORK}"
+
+# DIAGNOSTIC ONLY (the full install above stays critical): langchain-google-vertexai
+# requires pyarrow<24 while Termux ships python-pyarrow 26 (built against its
+# libarrow-cpp), and building pyarrow 23 needs Arrow C++ 23. Install everything
+# else so later blockers are visible. The Vertex AI provider is imported lazily
+# (artemis/llm/router.py), so this measures what else would block startup.
+diagnostic_install_without_vertexai() {
+    python - "${WORK}/pyproject.toml" > "${HOME}/reqs-no-vertexai.txt" <<'PY'
+import sys, tomllib
+deps = tomllib.load(open(sys.argv[1], "rb"))["project"]["dependencies"]
+for dep in deps:
+    if dep.startswith(("langchain-google-vertexai", "artemis-client")):
+        continue
+    print(dep)
+PY
+    cat "${HOME}/reqs-no-vertexai.txt"
+    python -m pip install --prefer-binary -r "${HOME}/reqs-no-vertexai.txt" \
+        && python -m pip install --no-deps "${WORK}/packages/artemis-client" \
+        && python -m pip install --no-deps "${WORK}"
+}
+if ! python -c "import artemis" >/dev/null 2>&1; then
+    step optional "DIAGNOSTIC install without langchain-google-vertexai" diagnostic_install_without_vertexai
+fi
 step optional "pip check" python -m pip check
 step optional "native and core imports" native_imports
 step critical "import artemis CLI module" python -c "import artemis.interfaces.cli.main"
