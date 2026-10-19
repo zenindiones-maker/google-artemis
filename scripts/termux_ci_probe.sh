@@ -87,17 +87,6 @@ native_imports() {
 }
 
 step critical "apt update" "${APT[@]}" update
-step critical "install base packages" "${APT[@]}" install python python-pip uv android-tools ffmpeg nodejs-lts git
-step optional "platform info" platform_info
-step optional "install rust and build toolchain" "${APT[@]}" install rust build-essential binutils pkg-config
-step optional "install Termux python-* packages" "${APT[@]}" install python-numpy python-scipy \
-    python-pillow python-cryptography python-lxml python-psutil python-grpcio python-pyarrow \
-    matplotlib python-greenlet python-rpds-py python-contourpy python-kiwisolver
-step optional "enable x11-repo" "${APT[@]}" install x11-repo
-step optional "apt update (x11)" "${APT[@]}" update
-# python-opencv-python links libdbus-1.so but does not depend on the dbus package
-# (observed: "dlopen failed: library libdbus-1.so not found").
-step optional "install python-opencv-python (+dbus)" "${APT[@]}" install python-opencv-python dbus
 
 # Copy the checkout (read-only mount) without VCS/virtualenv/node_modules.
 mkdir -p "${WORK}"
@@ -107,59 +96,17 @@ tar -C "${REPO}" --exclude=.git --exclude=.venv --exclude=node_modules -cf - . |
 # ./artemis checkout would shadow the installed package as a namespace package.
 cd "$(mktemp -d)" || exit 1
 
-step critical "create venv with system site-packages" python -m venv --system-site-packages "${HOME}/venv"
+# Exercise exactly the documented install path (pinned pkg list + constraints).
+# It handles ANDROID_API_LEVEL for maturin, termux-exec for './configure'
+# scripts and dbus for python-opencv-python (all observed blockers).
+export ARTEMIS_VENV="${HOME}/venv"
+step critical "scripts/install_termux.sh" bash "${WORK}/scripts/install_termux.sh"
 # shellcheck disable=SC1091
-. "${HOME}/venv/bin/activate"
+. "${ARTEMIS_VENV}/bin/activate"
 export IMAGEIO_FFMPEG_EXE="${PREFIX}/bin/ffmpeg"
-# maturin (Rust extensions such as uuid-utils, pydantic-core, jiter) refuses to
-# build for Android without an explicit API level ("Failed to determine Android
-# API level"). Use the level the Termux Python was built for.
-ANDROID_API_LEVEL="$(python -c 'import sys; print(sys.getandroidapilevel())')"
-export ANDROID_API_LEVEL
-# sdists that need numpy at build time (bottleneck, numexpr: pulled in by
-# langchain-google-vertexai) otherwise download and compile numpy from source in
-# an isolated build env, which fails on bionic (observed: undeclared cpowf/cexpl
-# in npy_math_complex.c). Build them against the Termux python-numpy instead.
-# On a phone, termux-exec (LD_PRELOAD) rewrites '#!/bin/sh' shebangs to
-# $PREFIX/bin/sh. termux-docker does not preload it, so builds that run
-# './configure' (uvloop's vendored libuv) fail with "No such file or directory".
-step optional "install termux-exec" "${APT[@]}" install termux-exec
-for lib in "${PREFIX}/lib/libtermux-exec-ld-preload.so" "${PREFIX}/lib/libtermux-exec.so"; do
-    if [ -f "${lib}" ]; then
-        export LD_PRELOAD="${lib}"
-        break
-    fi
-done
-echo "LD_PRELOAD=${LD_PRELOAD:-<none>}" >> "${REPORT}.env"
-
-step optional "build tools for no-isolation builds" python -m pip install setuptools wheel "versioneer[toml]" meson-python ninja
-step optional "numpy-dependent sdists without build isolation" \
-    python -m pip install --no-build-isolation bottleneck numexpr
-step critical "pip install ARTEMIS (non-locked, Termux system packages reused)" \
-    python -m pip install --prefer-binary "${WORK}"
-
-# DIAGNOSTIC ONLY (the full install above stays critical): langchain-google-vertexai
-# requires pyarrow<24 while Termux ships python-pyarrow 26 (built against its
-# libarrow-cpp), and building pyarrow 23 needs Arrow C++ 23. Install everything
-# else so later blockers are visible. The Vertex AI provider is imported lazily
-# (artemis/llm/router.py), so this measures what else would block startup.
-diagnostic_install_without_vertexai() {
-    python - "${WORK}/pyproject.toml" > "${HOME}/reqs-no-vertexai.txt" <<'PY'
-import sys, tomllib
-deps = tomllib.load(open(sys.argv[1], "rb"))["project"]["dependencies"]
-for dep in deps:
-    if dep.startswith(("langchain-google-vertexai", "artemis-client")):
-        continue
-    print(dep)
-PY
-    cat "${HOME}/reqs-no-vertexai.txt"
-    python -m pip install --prefer-binary -r "${HOME}/reqs-no-vertexai.txt" \
-        && python -m pip install --no-deps "${WORK}/packages/artemis-client" \
-        && python -m pip install --no-deps "${WORK}"
-}
-if ! python -c "import artemis.interfaces.cli.main" >/dev/null 2>&1; then
-    step optional "DIAGNOSTIC install without langchain-google-vertexai" diagnostic_install_without_vertexai
-fi
+step optional "platform info" platform_info
+step optional "installed Termux package versions" bash -c \
+    "grep -vE '^(#|\$)' '${WORK}/requirements/termux-pkg.txt' | awk '{print \$1}' | xargs dpkg-query -W -f='\${Package} \${Version} \${Installed-Size}\n'"
 step optional "pip check" python -m pip check
 step optional "native and core imports" native_imports
 step critical "import artemis CLI module" python -c "import artemis.interfaces.cli.main"

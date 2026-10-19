@@ -148,11 +148,15 @@ def _make_sandbox(tmp_path: Path, *, showcase_built: bool = True) -> Sandbox:
     return box
 
 
-def _termux(box: Sandbox, tmp_path: Path) -> Path:
+def _termux(box: Sandbox, tmp_path: Path, *, venv: bool = True) -> Path:
     prefix = tmp_path / "data" / "data" / "com.termux" / "files" / "usr"
     (prefix / "bin").mkdir(parents=True)
     box.env["PREFIX"] = str(prefix)
     box.env["TERMUX_VERSION"] = "0.118.3"
+    if venv:
+        # ARTEMIS already installed by scripts/install_termux.sh.
+        box.stub("python", where=box.home / ".artemis-venv" / "bin")
+        box.stub("artemis", where=box.home / ".artemis-venv" / "bin")
     return prefix / "bin"
 
 
@@ -310,3 +314,40 @@ def test_versioned_portable_node_takes_precedence_over_legacy_dir(tmp_path: Path
     assert result.returncode == 0, result.stderr
     assert "Node.js v22.23.2" in result.stdout
     assert not any("nodejs.org" in call for call in box.calls("curl"))
+
+
+def test_termux_without_artemis_venv_points_to_installer_and_skips_uv_sync(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path)
+    prefix_bin = _termux(box, tmp_path, venv=False)
+    _common_tools(box, prefix_bin)
+
+    result = box.run()
+
+    assert result.returncode == 1
+    assert "bash scripts/install_termux.sh" in result.stdout
+    assert box.calls("uv") == []
+
+
+def test_termux_launches_ui_from_the_termux_venv_not_uv_run(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path)
+    prefix_bin = _termux(box, tmp_path)
+    _common_tools(box, prefix_bin)
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    assert box.calls("uv") == []
+    assert any(call.startswith("-m artemis ui") for call in box.calls("python"))
+
+
+def test_desktop_still_syncs_with_uv_and_launches_with_uv_run(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path)
+    _common_tools(box, box.stubs)
+    for tool in ("adb", "ffmpeg", "scrcpy"):
+        box.stub(tool)
+
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    calls = box.calls("uv")
+    assert "sync --quiet" in calls
+    assert any(call.startswith("run python -m artemis ui") for call in calls)

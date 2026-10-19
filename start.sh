@@ -309,7 +309,26 @@ fi
 
 # 5. Synchronize Python runtime & dependencies
 echo -e "   ${BLUE}📦 Synchronizing Python runtime and project dependencies...${NC}"
-uv sync --quiet
+if [ "${IS_TERMUX}" = true ]; then
+    # uv.lock pins wheels (e.g. opencv-python 5.x) that do not exist for Android;
+    # Termux uses the explicit, pinned path in scripts/install_termux.sh instead.
+    ARTEMIS_VENV="${ARTEMIS_VENV:-${HOME}/.artemis-venv}"
+    if [ ! -x "${ARTEMIS_VENV}/bin/python" ]; then
+        echo -e "   ${YELLOW}⚠ ARTEMIS is not installed for Termux yet. Run:${NC}"
+        echo -e "      ${BOLD}bash scripts/install_termux.sh${NC}"
+        exit 1
+    fi
+else
+    uv sync --quiet
+fi
+
+run_artemis_cli() {
+    if [ "${IS_TERMUX}" = true ]; then
+        "${ARTEMIS_VENV}/bin/artemis" "$@"
+    else
+        uv run artemis "$@"
+    fi
+}
 
 # 6. Check and build Showcase UI if not already compiled
 SHOWCASE_INDEX="${SCRIPT_DIR}/apps/showcase_ui/dist/frontend/browser/index.html"
@@ -448,7 +467,7 @@ fi
 
 if [[ "${INSTALL_MCP}" =~ ^[Yy]$ ]]; then
     echo -e "   ${CYAN}Installing MCP server configuration & testing rules...${NC}"
-    if uv run artemis mcp --install all; then
+    if run_artemis_cli mcp --install all; then
         echo -e "   ${GREEN}✔ MCP configuration and rules installed successfully.${NC}"
         echo -e "   ${CYAN}💡 Tip: You can update or re-install anytime with: ${BOLD}uv run artemis mcp --install all${NC}"
     else
@@ -488,4 +507,7 @@ fi
 
 # Launch via `python -m artemis` (not the `artemis` console-script shim) so the
 # long-running server never pins .venv/Scripts/artemis[.exe] against reinstalls.
+if [ "${IS_TERMUX}" = true ]; then
+    exec "${ARTEMIS_VENV}/bin/python" -m artemis ui "${OPEN_FLAG}" "$@"
+fi
 exec uv run python -m artemis ui "${OPEN_FLAG}" "$@"

@@ -13,6 +13,8 @@ on:
       - "uv.lock"
       - "start.sh"
       - "scripts/termux_ci_probe.sh"
+      - "scripts/install_termux.sh"
+      - "requirements/**"
       - ".github/workflows/termux-docker-probe.yml"
   push:
     branches:
@@ -22,6 +24,8 @@ on:
       - "uv.lock"
       - "start.sh"
       - "scripts/termux_ci_probe.sh"
+      - "scripts/install_termux.sh"
+      - "requirements/**"
       - ".github/workflows/termux-docker-probe.yml"
 
 permissions:

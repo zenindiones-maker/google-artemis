@@ -43,20 +43,22 @@ def test_probe_never_uses_real_credentials_or_secrets():
     assert "API_KEY" not in source
 
 
-def test_rust_extensions_get_an_android_api_level_for_maturin():
+def test_probe_exercises_the_documented_install_script():
     source = PROBE.read_text(encoding="utf-8")
-    assert "export ANDROID_API_LEVEL" in source
-    assert "sys.getandroidapilevel()" in source
+    assert re.search(r'step critical "scripts/install_termux.sh" bash', source)
 
 
-def test_opencv_runtime_dependency_dbus_is_installed():
-    source = PROBE.read_text(encoding="utf-8")
-    assert "install python-opencv-python dbus" in source
-
-
-def test_numpy_dependent_sdists_build_against_termux_numpy():
-    source = PROBE.read_text(encoding="utf-8")
-    assert "--no-build-isolation bottleneck numexpr" in source
+def test_installer_handles_observed_termux_build_blockers():
+    installer = (ROOT / "scripts" / "install_termux.sh").read_text(encoding="utf-8")
+    pkgs = (ROOT / "requirements" / "termux-pkg.txt").read_text(encoding="utf-8")
+    # maturin: "Failed to determine Android API level"
+    assert "export ANDROID_API_LEVEL" in installer
+    assert "sys.getandroidapilevel()" in installer
+    # uvloop: "./configure: No such file or directory" without termux-exec
+    assert 'export LD_PRELOAD="${lib}"' in installer
+    assert "\ntermux-exec" in pkgs
+    # cv2: "dlopen failed: library libdbus-1.so not found"
+    assert "\ndbus " in pkgs
 
 
 def test_probe_runs_imports_outside_the_copied_checkout():
@@ -64,9 +66,3 @@ def test_probe_runs_imports_outside_the_copied_checkout():
     assert source.index('cd "$(mktemp -d)"') < source.index(
         'step critical "import artemis CLI module"'
     )
-
-
-def test_termux_exec_is_preloaded_like_on_a_device():
-    source = PROBE.read_text(encoding="utf-8")
-    assert "install termux-exec" in source
-    assert 'export LD_PRELOAD="${lib}"' in source
