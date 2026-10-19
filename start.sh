@@ -25,6 +25,13 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
+# Termux is Linux-based but does not use glibc. Never install desktop Linux
+# binaries or replace user-managed Node.js directories when running on Android.
+IS_TERMUX=false
+if [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *"/com.termux/files/usr" ]]; then
+    IS_TERMUX=true
+fi
+
 echo -e "${BOLD}${CYAN}======================================================${NC}"
 echo -e "${BOLD}${CYAN}      ✨ Artemis Autonomous Mobile Agent UI          ${NC}"
 echo -e "${BOLD}${CYAN}======================================================${NC}"
@@ -44,11 +51,29 @@ STANDARD_PATHS=(
     "${HOME}/Library/Android/sdk/platform-tools"
     "${HOME}/Android/Sdk/platform-tools"
 )
-for p in "${STANDARD_PATHS[@]}"; do
+# ARTEMIS_SKIP_STANDARD_PATHS=1 keeps PATH exactly as provided (hermetic tests and
+# reproducible/locked-down environments).
+if [ "${ARTEMIS_SKIP_STANDARD_PATHS:-0}" = "1" ]; then
+    STANDARD_PATHS=()
+fi
+for p in "${STANDARD_PATHS[@]+"${STANDARD_PATHS[@]}"}"; do
     if [ -d "${p}" ] && [[ ":${PATH}:" != *":${p}:"* ]]; then
         export PATH="${p}:${PATH}"
     fi
 done
+# Versioned portable Node.js installs (~/.local/share/node-vX.Y.Z) take precedence
+# over the legacy unversioned ~/.local/share/node directory from older releases.
+if [ "${IS_TERMUX}" != true ]; then
+    for node_bin in "${HOME}"/.local/share/node-v*/bin; do
+        if [ -x "${node_bin}/node" ]; then
+            export PATH="${node_bin}:${PATH}"
+        fi
+    done
+fi
+# Prefer native Termux binaries over any Linux-host tools in user-local directories.
+if [ "${IS_TERMUX}" = true ] && [ -n "${PREFIX:-}" ]; then
+    export PATH="${PREFIX}/bin:${PATH}"
+fi
 
 # Sudo credential and choice state tracking
 SUDO_AUTHENTICATED=false
@@ -118,6 +143,13 @@ is_node_compatible() {
 
 # 2. Check or install uv (Fast Python package manager)
 if ! command -v uv >/dev/null 2>&1; then
+    if [ "${IS_TERMUX}" = true ]; then
+        # The Astral installer ships glibc/musl Linux binaries that do not run on
+        # Android's bionic libc. Termux packages a native uv build instead.
+        echo -e "${YELLOW}⚠ uv not found. In Termux, install the native package and re-run:${NC}"
+        echo -e "      ${BOLD}pkg install uv${NC}"
+        exit 1
+    fi
     echo -e "${YELLOW}⚡ uv not found. Installing Astral uv...${NC}"
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
@@ -134,6 +166,9 @@ if ! command -v adb >/dev/null 2>&1; then
         "${HOME}/.local/share/platform-tools" \
         "/opt/homebrew/bin" \
         "/usr/local/bin"; do
+        if [ "${ARTEMIS_SKIP_STANDARD_PATHS:-0}" = "1" ] && [[ "${candidate}" != "${HOME}"/* ]]; then
+            continue
+        fi
         if [ -n "${candidate}" ] && [ -x "${candidate}/adb" ]; then
             export PATH="${candidate}:${PATH}"
             break
@@ -144,9 +179,25 @@ fi
 MISSING_CORE=()
 if ! command -v adb >/dev/null 2>&1; then MISSING_CORE+=("adb"); fi
 if ! command -v ffmpeg >/dev/null 2>&1; then MISSING_CORE+=("ffmpeg"); fi
-if ! command -v scrcpy >/dev/null 2>&1; then MISSING_CORE+=("scrcpy"); fi
+if ! command -v scrcpy >/dev/null 2>&1 && [ "${IS_TERMUX}" != true ]; then MISSING_CORE+=("scrcpy"); fi
 
-if [ ${#MISSING_CORE[@]} -gt 0 ]; then
+if [ "${IS_TERMUX}" = true ]; then
+    echo -e "   ${YELLOW}ℹ Termux detected. Skipping desktop OS binary installers; use Termux packages for host tools.${NC}"
+    TERMUX_PKGS=()
+    for tool in "${MISSING_CORE[@]+"${MISSING_CORE[@]}"}"; do
+        case "${tool}" in
+            adb) TERMUX_PKGS+=("android-tools") ;;
+            *) TERMUX_PKGS+=("${tool}") ;;
+        esac
+    done
+    if [ ${#TERMUX_PKGS[@]} -gt 0 ]; then
+        echo -e "   ${YELLOW}⚠ Missing host tools (${MISSING_CORE[*]}). Install them with:${NC}"
+        echo -e "      ${BOLD}pkg install ${TERMUX_PKGS[*]}${NC}"
+    fi
+    echo -e "   ${CYAN}📱 To control this same phone from Termux, enable Wireless debugging in Developer options, then:${NC}"
+    echo -e "      adb pair 127.0.0.1:<pairing-port>    # code shown under 'Pair device with pairing code'"
+    echo -e "      adb connect 127.0.0.1:<debug-port>   # port shown on the Wireless debugging screen"
+elif [ ${#MISSING_CORE[@]} -gt 0 ]; then
     OS_NAME="$(uname -s)"
     if [ "${OS_NAME}" = "Darwin" ]; then
         export HOMEBREW_NO_AUTO_UPDATE=1
@@ -258,7 +309,26 @@ fi
 
 # 5. Synchronize Python runtime & dependencies
 echo -e "   ${BLUE}📦 Synchronizing Python runtime and project dependencies...${NC}"
-uv sync --quiet
+if [ "${IS_TERMUX}" = true ]; then
+    # uv.lock pins wheels (e.g. opencv-python 5.x) that do not exist for Android;
+    # Termux uses the explicit, pinned path in scripts/install_termux.sh instead.
+    ARTEMIS_VENV="${ARTEMIS_VENV:-${HOME}/.artemis-venv}"
+    if [ ! -x "${ARTEMIS_VENV}/bin/python" ]; then
+        echo -e "   ${YELLOW}⚠ ARTEMIS is not installed for Termux yet. Run:${NC}"
+        echo -e "      ${BOLD}bash scripts/install_termux.sh${NC}"
+        exit 1
+    fi
+else
+    uv sync --quiet
+fi
+
+run_artemis_cli() {
+    if [ "${IS_TERMUX}" = true ]; then
+        "${ARTEMIS_VENV}/bin/artemis" "$@"
+    else
+        uv run artemis "$@"
+    fi
+}
 
 # 6. Check and build Showcase UI if not already compiled
 SHOWCASE_INDEX="${SCRIPT_DIR}/apps/showcase_ui/dist/frontend/browser/index.html"
@@ -280,7 +350,7 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
         nvm use 22 >/dev/null 2>&1 || true
     fi
 
-    if ! is_node_compatible; then
+    if ! is_node_compatible && [ "${IS_TERMUX}" != true ]; then
         OS_NAME="$(uname -s)"
         if command -v node >/dev/null 2>&1; then
             echo -e "   ${YELLOW}⚡ Detected Node.js $(node -v 2>/dev/null), but Angular CLI requires Node.js >= v22.22.0. Upgrading Node.js...${NC}"
@@ -329,11 +399,25 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
             OS_SYS="$(uname -s | tr '[:upper:]' '[:lower:]')"
             if [ -n "${NODE_ARCH}" ] && { [ "${OS_SYS}" = "linux" ] || [ "${OS_SYS}" = "darwin" ]; }; then
                 NODE_VER="v22.23.2"
-                NODE_DIR="${HOME}/.local/share/node"
-                echo -e "   ${CYAN}📦 Installing portable Node.js ${NODE_VER} in user space (~/.local)...${NC}"
-                rm -rf "${NODE_DIR}"
-                mkdir -p "${NODE_DIR}" "${HOME}/.local/bin"
-                if curl -fsSL --connect-timeout 5 --max-time 60 "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-${OS_SYS}-${NODE_ARCH}.tar.gz" | tar -xz -C "${NODE_DIR}" --strip-components=1 2>/dev/null; then
+                NODE_DIR="${HOME}/.local/share/node-${NODE_VER}"
+                mkdir -p "${HOME}/.local/share" "${HOME}/.local/bin"
+                if [ ! -x "${NODE_DIR}/bin/node" ]; then
+                    echo -e "   ${CYAN}📦 Installing portable Node.js ${NODE_VER} in user space (~/.local)...${NC}"
+                    # Extract into a private temporary directory and move it into place only
+                    # when complete, so an interrupted download never leaves a half-installed
+                    # Node.js that later runs would pick up.
+                    NODE_TMP="$(mktemp -d "${HOME}/.local/share/.node-${NODE_VER}.partial.XXXXXX")"
+                    if curl -fsSL --connect-timeout 5 --max-time 60 "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-${OS_SYS}-${NODE_ARCH}.tar.gz" | tar -xz -C "${NODE_TMP}" --strip-components=1 2>/dev/null && [ -x "${NODE_TMP}/bin/node" ]; then
+                        if [ -e "${NODE_DIR}" ]; then
+                            # Keep (never delete) an incomplete directory left by older versions.
+                            mv "${NODE_DIR}" "${NODE_DIR}.incomplete-$$"
+                        fi
+                        mv "${NODE_TMP}" "${NODE_DIR}"
+                    else
+                        rm -rf "${NODE_TMP}"
+                    fi
+                fi
+                if [ -x "${NODE_DIR}/bin/node" ]; then
                     ln -sf "${NODE_DIR}/bin/node" "${HOME}/.local/bin/node"
                     ln -sf "${NODE_DIR}/bin/npm" "${HOME}/.local/bin/npm"
                     ln -sf "${NODE_DIR}/bin/npx" "${HOME}/.local/bin/npx"
@@ -350,7 +434,7 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
         echo -e "   ${YELLOW}🎨 Showcase UI build not found. Compiling Angular Showcase UI...${NC}"
         (
             cd "${SCRIPT_DIR}/apps/showcase_ui"
-            npm install --silent
+            npm ci --silent
             # Auto-patch Angular CLI node version constraint if running on Node 22.22.x (e.g. Cloudtop / Debian)
             CLI_NODE_VERSION="${SCRIPT_DIR}/apps/showcase_ui/node_modules/@angular/cli/src/utilities/node-version.js"
             if [ -f "${CLI_NODE_VERSION}" ]; then
@@ -364,6 +448,9 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
         )
     else
         echo -e "   ${YELLOW}⚠ Could not configure compatible Node.js (>= 22.22.0). Showcase UI will serve fallback build notice.${NC}"
+        if [ "${IS_TERMUX}" = true ]; then
+            echo -e "      In Termux, install a compatible Node.js with: ${BOLD}pkg install nodejs-lts${NC}"
+        fi
     fi
 fi
 
@@ -380,7 +467,7 @@ fi
 
 if [[ "${INSTALL_MCP}" =~ ^[Yy]$ ]]; then
     echo -e "   ${CYAN}Installing MCP server configuration & testing rules...${NC}"
-    if uv run artemis mcp --install all; then
+    if run_artemis_cli mcp --install all; then
         echo -e "   ${GREEN}✔ MCP configuration and rules installed successfully.${NC}"
         echo -e "   ${CYAN}💡 Tip: You can update or re-install anytime with: ${BOLD}uv run artemis mcp --install all${NC}"
     else
@@ -420,4 +507,7 @@ fi
 
 # Launch via `python -m artemis` (not the `artemis` console-script shim) so the
 # long-running server never pins .venv/Scripts/artemis[.exe] against reinstalls.
+if [ "${IS_TERMUX}" = true ]; then
+    exec "${ARTEMIS_VENV}/bin/python" -m artemis ui "${OPEN_FLAG}" "$@"
+fi
 exec uv run python -m artemis ui "${OPEN_FLAG}" "$@"

@@ -1,0 +1,65 @@
+name: ARTEMIS Termux-in-Docker probe (aarch64)
+
+# Installs ARTEMIS inside a real Termux userland (termux/termux-docker, bionic
+# libc) on a free GitHub-hosted ARM64 runner and reports which steps fail.
+# This is NOT a device test: there is no Android framework, adb device or
+# screen, so a green run does not prove ARTEMIS works on a phone.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "start.sh"
+      - "scripts/termux_ci_probe.sh"
+      - "scripts/install_termux.sh"
+      - "requirements/**"
+      - ".github/workflows/termux-docker-probe.yml"
+  push:
+    branches:
+      - "ci/android-termux-compat-audit"
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "start.sh"
+      - "scripts/termux_ci_probe.sh"
+      - "scripts/install_termux.sh"
+      - "requirements/**"
+      - ".github/workflows/termux-docker-probe.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: termux-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  termux-aarch64:
+    name: Termux aarch64 install + import + CLI probe
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Run probe inside termux/termux-docker:aarch64
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/termux-probe"
+          mkdir -p "$out"
+          chmod 0777 "$out"
+          docker run --rm \
+            --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            -v "$out:/out" \
+            termux/termux-docker:aarch64 \
+            bash /repo/scripts/termux_ci_probe.sh /repo /out
+      - name: Publish summary
+        if: always()
+        run: cat "$RUNNER_TEMP/termux-probe/termux-probe.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: termux-docker-probe
+          path: ${{ runner.temp }}/termux-probe/
+          if-no-files-found: warn

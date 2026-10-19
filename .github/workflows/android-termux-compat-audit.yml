@@ -1,0 +1,119 @@
+name: ARTEMIS Android and ARM64 Compatibility Audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/android-termux-compat-audit.yml"
+      - "start.sh"
+      - "artemis/**"
+      - "apps/**"
+      - "mcp_server/**"
+      - "third_party/**"
+      - "packages/**"
+      - "tests/**"
+      - "scripts/**"
+  push:
+    branches:
+      - main
+      - "ci/android-termux-compat-audit"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-validation:
+    name: Linux dependency and test validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    env:
+      # Make uv use the matrix interpreter instead of any other Python on PATH.
+      UV_PYTHON: ${{ matrix.python }}
+      UV_NO_PROGRESS: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Check lockfile
+        run: uv lock --check
+      - name: Validate startup shell syntax
+        run: bash -n start.sh
+      - name: Install locked development environment
+        run: uv sync --dev --locked
+      - name: Record interpreter
+        run: uv run python -VV
+      - name: Configure fake credentials for offline tests
+        shell: bash
+        run: |
+          cat > .env <<'ENV'
+          GOOGLE_API_KEY=ci-not-a-real-key
+          GEMINI_API_KEY=ci-not-a-real-key
+          ENV
+          echo "GOOGLE_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
+          echo "GEMINI_API_KEY=ci-not-a-real-key" >> "$GITHUB_ENV"
+      - name: Run deterministic Python tests
+        run: >-
+          uv run pytest
+          tests/unit
+          tests/tools
+          packages/artemis-client/tests
+          -q
+          --cov=artemis
+          --cov=mcp_server
+          --cov=apps/admin_console
+          --cov=third_party
+          --cov-fail-under=60
+
+  android-wheel-audit:
+    name: Lock-derived Android ARM64 / Termux dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.14"
+      - name: Index Termux and TUR package recipes (metadata only)
+        shell: bash
+        run: |
+          mkdir -p audit
+          for repo in termux/termux-packages termux-user-repository/tur; do
+            dir="$RUNNER_TEMP/$(basename "$repo")"
+            git clone --quiet --depth 1 --filter=blob:none --no-checkout "https://github.com/$repo" "$dir"
+            git -C "$dir" rev-parse HEAD | sed "s|^|$repo @ |" >> audit/termux-index-revisions.txt
+            git -C "$dir" ls-tree -r --name-only HEAD \
+              | grep -E '/build\.sh$|\.subpackage\.sh$' >> audit/termux-index.txt
+          done
+          wc -l audit/termux-index.txt
+      - name: Audit native dependencies from uv.lock
+        run: >-
+          python scripts/android_wheel_audit.py
+          --lock uv.lock
+          --termux-index audit/termux-index.txt
+          --json audit/android-dependency-audit.json
+          --markdown audit/android-dependency-audit.md
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "## Android ARM64 / Termux dependency audit (evidence only, not a device test)"
+            cat audit/android-dependency-audit.md 2>/dev/null || echo "audit did not produce a report"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: android-dependency-audit
+          path: audit/
+          if-no-files-found: warn

@@ -14,10 +14,42 @@
 
 """Unit tests for ARTEMIS Unified CLI application."""
 
+import pytest
+from rich.console import Console
+from typer import rich_utils
 from typer.testing import CliRunner
 from artemis.interfaces.cli.main import app
 
 runner = CliRunner()
+
+# Environment variables that make Rich/Typer render differently depending on the
+# host running the tests (CI runners, colour-forcing shells, dumb terminals).
+_HOST_RENDERING_ENV = ("GITHUB_ACTIONS", "FORCE_COLOR", "PY_COLORS", "NO_COLOR", "TTY_COMPATIBLE")
+
+
+@pytest.fixture(autouse=True)
+def deterministic_cli_rendering(monkeypatch):
+    """Render CLI output identically on every host.
+
+    Typer computes ``rich_utils.FORCE_TERMINAL`` at import time and forces a
+    terminal whenever ``GITHUB_ACTIONS``/``FORCE_COLOR``/``PY_COLORS`` is set,
+    which makes Rich embed ANSI escapes inside option names (``--profile``
+    becomes ``-`` + ``-profile`` in separate styles).  ``CliRunner(color=False)``
+    does not affect that console.  Rich also clamps width to 80 columns when
+    ``TERM=dumb``.  Neutralise both so assertions test content, not the host.
+    Rich help rendering itself stays enabled.
+    """
+    for name in _HOST_RENDERING_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", False)
+    # Module-level consoles captured the host environment at import time.
+    from artemis.interfaces.cli.commands import mcp as mcp_cmd
+    from artemis.interfaces.cli.commands import server_lifecycle as sl_cmd
+
+    monkeypatch.setattr(mcp_cmd, "console", Console())
+    monkeypatch.setattr(sl_cmd, "console", Console())
 
 
 def test_cli_help():
