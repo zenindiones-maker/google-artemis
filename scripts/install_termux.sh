@@ -16,6 +16,7 @@
 # Explicit, pinned ARTEMIS install path for Termux (Android, aarch64).
 #
 #   bash scripts/install_termux.sh [--dry-run]
+#   bash scripts/install_termux.sh --wheelhouse DIR --expect-sums-sha256 HEX [--allow-build] [--dry-run]
 #
 # 1. installs the Termux packages in requirements/termux-pkg.txt (warns when the
 #    installed version differs from the one validated in CI),
@@ -23,7 +24,10 @@
 #    opencv, pyarrow, ... are reused instead of compiled,
 # 3. pip-installs ARTEMIS with requirements/termux-constraints.txt (exact versions
 #    that passed in the Termux-in-Docker probe); Rust/C packages without a Termux
-#    package are compiled locally (pydantic-core, jiter, orjson, ...),
+#    package are compiled locally (pydantic-core, jiter, orjson, ...);
+#    with --wheelhouse, CI-built wheels are checked first (SHA256SUMS pinned by
+#    --expect-sums-sha256: integrity, not provenance) and installed offline, so no
+#    Rust/C toolchain is installed (unless --allow-build and a wheel is missing),
 # 4. verifies 'artemis --help'.
 #
 # Validated only in a Termux aarch64 container (see docs/termux.md), not on a
@@ -36,20 +40,47 @@ PKG_FILE="${REPO}/requirements/termux-pkg.txt"
 CONSTRAINTS="${REPO}/requirements/termux-constraints.txt"
 VENV="${ARTEMIS_VENV:-${HOME}/.artemis-venv}"
 DRY_RUN=false
+WHEELHOUSE=""
+EXPECT_SUMS=""
+ALLOW_BUILD=false
+SOURCE_BUILT_FILE="${REPO}/requirements/termux-source-built.txt"
+BUILD_PKGS=(rust clang build-essential)
 
-for arg in "$@"; do
-    case "${arg}" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --dry-run) DRY_RUN=true ;;
+        --wheelhouse)
+            WHEELHOUSE="${2:?--wheelhouse needs a directory}"
+            shift
+            ;;
+        --expect-sums-sha256)
+            EXPECT_SUMS="${2:?--expect-sums-sha256 needs a hex digest}"
+            shift
+            ;;
+        --allow-build) ALLOW_BUILD=true ;;
         -h | --help)
-            sed -n '16,30p' "${BASH_SOURCE[0]}"
+            sed -n '16,35p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         *)
-            echo "Unknown option: ${arg}" >&2
+            echo "Unknown option: $1" >&2
             exit 2
             ;;
     esac
+    shift
 done
+
+if [ -n "${WHEELHOUSE}" ]; then
+    if [ ! -d "${WHEELHOUSE}" ]; then
+        echo "✖ Wheelhouse ${WHEELHOUSE} does not exist. Nothing was changed." >&2
+        exit 4
+    fi
+    WHEELHOUSE="$(cd "${WHEELHOUSE}" && pwd)"
+    if [ -z "${EXPECT_SUMS}" ]; then
+        echo "✖ --wheelhouse needs --expect-sums-sha256 <hash printed by the CI run>. Nothing was changed." >&2
+        exit 4
+    fi
+fi
 
 run() {
     echo "+ $*"
@@ -81,6 +112,18 @@ while read -r name version repo _; do
     fi
 done < "${PKG_FILE}"
 
+is_build_pkg() {
+    local p
+    for p in "${BUILD_PKGS[@]}"; do [ "$1" = "${p}" ] && return 0; done
+    return 1
+}
+if [ -n "${WHEELHOUSE}" ]; then
+    # Prebuilt wheels replace on-device compilation: skip the Rust/C toolchain.
+    KEEP=()
+    for p in "${MAIN_PKGS[@]}"; do is_build_pkg "${p}" || KEEP+=("${p}"); done
+    MAIN_PKGS=("${KEEP[@]}")
+    echo "Wheelhouse mode: skipping build toolchain (${BUILD_PKGS[*]})"
+fi
 run pkg install -y "${MAIN_PKGS[@]}"
 if [ ${#X11_PKGS[@]} -gt 0 ]; then
     run pkg install -y "${X11_PKGS[@]}"
@@ -119,6 +162,45 @@ if [ -z "${LD_PRELOAD:-}" ]; then
 fi
 echo "LD_PRELOAD=${LD_PRELOAD:-<none>}"
 
+# --- Wheelhouse: verify BEFORE creating or touching the venv ------------------
+# SHA256SUMS proves integrity (bytes unchanged since the CI run whose hash you
+# pinned with --expect-sums-sha256), not provenance: who built them is shown only by
+# the GitHub run (and, later, an attestation), not by the hash.
+PIP_SOURCE=(--prefer-binary)
+if [ -n "${WHEELHOUSE}" ]; then
+    WH_COUNT="$(find "${WHEELHOUSE}" -maxdepth 1 -name '*.whl' | wc -l)"
+    WH_BYTES="$(du -sk "${WHEELHOUSE}" | cut -f1)"
+    echo "Wheelhouse: ${WH_COUNT} wheels, ${WH_BYTES} KiB in ${WHEELHOUSE}"
+    if [ "${DRY_RUN}" = true ]; then
+        echo "Free space in HOME: $(df -k "${HOME}" 2>/dev/null | awk 'NR==2 {print $4}') KiB"
+        echo "+ python scripts/verify_artifacts.py --wheelhouse ${WHEELHOUSE} --expect-sums-sha256 ${EXPECT_SUMS}"
+    else
+        set +e
+        python "${REPO}/scripts/verify_artifacts.py" --wheelhouse "${WHEELHOUSE}" \
+            --constraints "${CONSTRAINTS}" --source-built "${SOURCE_BUILT_FILE}" \
+            --expect-sums-sha256 "${EXPECT_SUMS}" 2> "${TMPDIR:-/tmp}/artemis-wheelhouse-check.txt"
+        rc=$?
+        set -e
+        problems="$(cat "${TMPDIR:-/tmp}/artemis-wheelhouse-check.txt")"
+        if [ "${rc}" -ne 0 ]; then
+            if [ "${ALLOW_BUILD}" = true ] && ! grep -qvE '^NOT COVERED ' <<< "${problems}"; then
+                echo "⚠ Wheelhouse lacks some source-built packages; --allow-build given, compiling them:"
+                echo "${problems}"
+                run pkg install -y "${BUILD_PKGS[@]}"
+            else
+                echo "✖ Wheelhouse check failed. Nothing was installed into the venv:" >&2
+                echo "${problems}" >&2
+                exit 5
+            fi
+        fi
+    fi
+    if [ "${ALLOW_BUILD}" = true ]; then
+        PIP_SOURCE=(--prefer-binary --find-links "${WHEELHOUSE}")
+    else
+        PIP_SOURCE=(--no-index --find-links "${WHEELHOUSE}")
+    fi
+fi
+
 # --- 3. Virtualenv + ARTEMIS ---------------------------------------------------
 # Contamination guard: variables from another Python environment must not leak into
 # the venv creation or pip install.
@@ -145,8 +227,12 @@ else
     fi
     echo "Reusing existing virtualenv ${VENV}"
 fi
-run "${VENV}/bin/python" -m pip install --prefer-binary -c "${CONSTRAINTS}" "${REPO}/packages/artemis-client"
-run "${VENV}/bin/python" -m pip install --prefer-binary -c "${CONSTRAINTS}" "${REPO}"
+if [ -n "${WHEELHOUSE}" ]; then
+    run "${VENV}/bin/python" -m pip install --no-cache-dir "${PIP_SOURCE[@]}" -c "${CONSTRAINTS}" artemis-client artemis
+else
+    run "${VENV}/bin/python" -m pip install --prefer-binary -c "${CONSTRAINTS}" "${REPO}/packages/artemis-client"
+    run "${VENV}/bin/python" -m pip install --prefer-binary -c "${CONSTRAINTS}" "${REPO}"
+fi
 
 # --- 4. Verify -----------------------------------------------------------------
 run "${VENV}/bin/artemis" --help

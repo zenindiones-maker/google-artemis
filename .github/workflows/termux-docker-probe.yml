@@ -15,6 +15,8 @@ on:
       - "scripts/termux_ci_probe.sh"
       - "scripts/install_termux.sh"
       - "requirements/**"
+      - "scripts/termux_probe_metrics.py"
+      - "scripts/verify_artifacts.py"
       - ".github/workflows/termux-docker-probe.yml"
   push:
     branches:
@@ -52,6 +54,8 @@ jobs:
             --security-opt seccomp=unconfined \
             -v "$GITHUB_WORKSPACE:/repo:ro" \
             -v "$out:/out" \
+            -e SOURCE_COMMIT="${{ github.sha }}" \
+            -e RUN_ID="${{ github.run_id }}" \
             termux/termux-docker:aarch64 \
             bash /repo/scripts/termux_ci_probe.sh /repo /out
       - name: Publish summary
@@ -63,3 +67,11 @@ jobs:
           name: termux-docker-probe
           path: ${{ runner.temp }}/termux-probe/
           if-no-files-found: warn
+      # Device wheelhouse: name binds the commit; SHA256SUMS hash is in the summary.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: success()
+        with:
+          name: termux-wheelhouse-cp314-android24-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/termux-probe/wheelhouse/
+          if-no-files-found: error
+          retention-days: 30

@@ -99,8 +99,7 @@ cd "$(mktemp -d)" || exit 1
 METRICS="${WORK}/scripts/termux_probe_metrics.py"
 CONSTRAINTS="${WORK}/requirements/termux-constraints.txt"
 # Packages that the Termux probe observed being compiled from source.
-SOURCE_BUILT=(pydantic-core jiter orjson ormsgpack uuid-utils tiktoken watchfiles zstandard
-    regex tornado httptools uvloop pyyaml)
+mapfile -t SOURCE_BUILT < <(grep -vE '^(#|$)' "${WORK}/requirements/termux-source-built.txt")
 
 # --- Probe-only: per-package source builds (before the real install) ---------
 # Same Termux packages and build environment as install_termux.sh, but each
@@ -156,6 +155,32 @@ step optional "startup metrics (artemis --help)" python "${METRICS}" startup --o
     --runs 5 --warmup 1 --environment "Termux-in-Docker aarch64 on ubuntu-24.04-arm (CI, not a device)"
 step optional "host tools" bash -c 'adb version | head -n 1; ffmpeg -version | head -n 1; node -v; uv --version'
 step optional "pip freeze" python -m pip freeze
+
+# --- Prebuilt wheelhouse for the device (no rust/clang on the phone) ----------
+# The 13 source-built wheels plus every other venv-local dist as a wheel, the
+# artemis + artemis-client wheels, manifest.json and SHA256SUMS. Installed again
+# offline into a fresh venv to prove the wheelhouse is complete.
+build_wheelhouse() {
+    local wh="${OUT}/wheelhouse" reqs="${OUT}/wheelhouse-reqs.txt"
+    mkdir -p "${wh}"
+    cp "${OUT}"/builds/wheels/*.whl "${wh}/"
+    "${ARTEMIS_VENV}/bin/python" -m pip list --local --format=freeze \
+        | grep -viE '^(pip|artemis|artemis-client)==' > "${reqs}"
+    "${ARTEMIS_VENV}/bin/python" -m pip wheel --no-deps --prefer-binary --find-links "${wh}" \
+        -w "${wh}" -r "${reqs}"
+    "${ARTEMIS_VENV}/bin/python" -m pip wheel --no-deps -w "${wh}" "${WORK}" "${WORK}/packages/artemis-client"
+    dpkg-query -W -f='${Package} ${Version}\n' > "${OUT}/termux-packages.txt"
+    python "${METRICS}" wheelhouse-manifest --dir "${wh}" \
+        --source-commit "${SOURCE_COMMIT:-unknown}" --run-id "${RUN_ID:-local}" \
+        --python-version "$(python -c 'import platform; print(platform.python_version())')" \
+        --termux-packages "${OUT}/termux-packages.txt" | tee "${OUT}/wheelhouse-sums.txt"
+}
+step critical "wheelhouse: build" build_wheelhouse
+WH_SUMS="$(sed -n 's/^SHA256SUMS sha256: //p' "${OUT}/wheelhouse-sums.txt" 2>/dev/null)"
+step critical "wheelhouse: offline install into a fresh venv" \
+    env ARTEMIS_VENV="${HOME}/venv-wheelhouse" bash "${WORK}/scripts/install_termux.sh" \
+    --wheelhouse "${OUT}/wheelhouse" --expect-sums-sha256 "${WH_SUMS:-missing}"
+step critical "wheelhouse venv: artemis --help" "${HOME}/venv-wheelhouse/bin/artemis" --help
 step optional "disk usage" bash -c 'du -sh "${ARTEMIS_VENV}" "${HOME}/.cache/pip" "${PREFIX}" "${HOME}/.cargo" 2>/dev/null; df -h "${HOME}" 2>/dev/null' 
 
 {
@@ -165,6 +190,10 @@ step optional "disk usage" bash -c 'du -sh "${ARTEMIS_VENV}" "${HOME}/.cache/pip
     echo
     echo "## Disk usage during install_termux.sh (peak / final)"
     cat "${OUT}/disk-usage.md" 2>/dev/null || echo "no disk report"
+    echo
+    echo "## Wheelhouse"
+    cat "${OUT}/wheelhouse-sums.txt" 2>/dev/null || echo "no wheelhouse"
+    du -sh "${OUT}/wheelhouse" 2>/dev/null || true
     echo
     echo "## Startup metrics (artemis --help)"
     cat "${OUT}/startup-metrics.md" 2>/dev/null || echo "no startup metrics"
