@@ -21,6 +21,7 @@ Anthropic, OpenRouter, and local Ollama/vLLM endpoints.
 
 from enum import StrEnum
 import hashlib
+import importlib
 import os
 from typing import Any
 
@@ -43,8 +44,31 @@ VERTEX_AI_MISSING_MESSAGE = (
 )
 
 
-class VertexAIUnavailableError(ImportError):
+class ProviderUnavailableError(ImportError):
+    """Raised when the selected LLM provider's integration package is not installed.
+
+    Other providers keep working; only the selected one is unavailable.
+    """
+
+
+class VertexAIUnavailableError(ProviderUnavailableError):
     """Raised when the Vertex AI provider is selected without its optional dependency."""
+
+
+def _provider_missing_message(provider: str, package: str) -> str:
+    return (
+        f"The '{provider}' LLM provider is selected but {package} is not installed. "
+        f"Install it with: pip install {package} (it is part of the default desktop "
+        "install: uv sync), or choose another provider such as 'google'."
+    )
+
+
+def _load_chat_class(module: str, name: str, provider: str, package: str) -> Any:
+    """Import a LangChain chat model class, raising an actionable error if missing."""
+    try:
+        return getattr(importlib.import_module(module), name)
+    except ImportError as exc:
+        raise ProviderUnavailableError(_provider_missing_message(provider, package)) from exc
 
 
 class ModelProvider(StrEnum):
@@ -297,7 +321,9 @@ class ModelFactory:
             return ChatVertexAI(**{k: v for k, v in kwargs.items() if v is not None})
 
         elif provider == ModelProvider.OPENAI:
-            from langchain_openai import ChatOpenAI
+            ChatOpenAI = _load_chat_class(  # noqa: N806
+                "langchain_openai", "ChatOpenAI", provider.value, "langchain-openai"
+            )
 
             api_key = (
                 endpoint.api_key
@@ -320,7 +346,9 @@ class ModelFactory:
             return ChatOpenAI(**{k: v for k, v in kwargs.items() if v is not None})
 
         elif provider == ModelProvider.ANTHROPIC:
-            from langchain_anthropic import ChatAnthropic
+            ChatAnthropic = _load_chat_class(  # noqa: N806
+                "langchain_anthropic", "ChatAnthropic", provider.value, "langchain-anthropic"
+            )
 
             api_key = (
                 endpoint.api_key
@@ -347,7 +375,9 @@ class ModelFactory:
             return ChatAnthropic(**{k: v for k, v in kwargs.items() if v is not None})
 
         elif provider == ModelProvider.OPENROUTER:
-            from langchain_openai import ChatOpenAI
+            ChatOpenAI = _load_chat_class(  # noqa: N806
+                "langchain_openai", "ChatOpenAI", provider.value, "langchain-openai"
+            )
 
             api_key = (
                 endpoint.api_key
@@ -367,7 +397,9 @@ class ModelFactory:
             )
 
         elif provider == ModelProvider.XAI:
-            from langchain_openai import ChatOpenAI
+            ChatOpenAI = _load_chat_class(  # noqa: N806
+                "langchain_openai", "ChatOpenAI", provider.value, "langchain-openai"
+            )
 
             api_key = (
                 endpoint.api_key
@@ -383,7 +415,9 @@ class ModelFactory:
             )
 
         elif provider in (ModelProvider.OLLAMA, ModelProvider.VLLM, ModelProvider.CUSTOM):
-            from langchain_openai import ChatOpenAI
+            ChatOpenAI = _load_chat_class(  # noqa: N806
+                "langchain_openai", "ChatOpenAI", provider.value, "langchain-openai"
+            )
 
             api_key = endpoint.api_key or os.environ.get("OPENAI_API_KEY", "EMPTY")
             base_url = endpoint.api_base or os.environ.get(
