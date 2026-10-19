@@ -286,6 +286,12 @@ def _status(**overrides):
 def test_helper_status_explains_probe_tunnel_and_newer_build(monkeypatch):
     from artemis.interfaces.cli.commands import helper as helper_cli
 
+    # Since 99d10b1 an explicit --serial must be attached; simulate the device.
+    monkeypatch.setattr(
+        helper_cli.device_pool,
+        "list_devices",
+        lambda: [SimpleNamespace(serial="dev", state="device", is_busy=False)],
+    )
     monkeypatch.setattr(
         helper_cli.helper_manager,
         "status",
@@ -337,6 +343,11 @@ def test_helper_install_prints_manual_path_on_enable_failure(monkeypatch):
             enabled=False,
             error=f"This device rejected enabling the accessibility service from adb. {MANUAL_ENABLE_PATH}.",
         ),
+    )
+    monkeypatch.setattr(
+        helper_cli.device_pool,
+        "list_devices",
+        lambda: [SimpleNamespace(serial="dev", state="device", is_busy=False)],
     )
     result = CliRunner().invoke(helper_cli.helper_app, ["install", "--serial", "dev"])
     assert result.exit_code == 1
