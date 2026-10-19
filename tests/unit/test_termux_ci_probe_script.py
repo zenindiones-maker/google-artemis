@@ -66,3 +66,9 @@ def test_probe_runs_imports_outside_the_copied_checkout():
     assert source.index('cd "$(mktemp -d)"') < source.index(
         'step critical "import artemis CLI module"'
     )
+
+
+def test_probe_records_build_timing_and_disk_usage():
+    source = PROBE.read_text(encoding="utf-8")
+    assert 'export PIP_LOG="${OUT}/logs/pip-timestamped.log"' in source
+    assert 'step optional "disk usage"' in source

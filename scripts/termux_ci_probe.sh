@@ -100,6 +100,8 @@ cd "$(mktemp -d)" || exit 1
 # It handles ANDROID_API_LEVEL for maturin, termux-exec for './configure'
 # scripts and dbus for python-opencv-python (all observed blockers).
 export ARTEMIS_VENV="${HOME}/venv"
+# Timestamped pip log (pip reads PIP_LOG as --log) to measure per-package build times.
+export PIP_LOG="${OUT}/logs/pip-timestamped.log"
 step critical "scripts/install_termux.sh" bash "${WORK}/scripts/install_termux.sh"
 # shellcheck disable=SC1091
 . "${ARTEMIS_VENV}/bin/activate"
@@ -114,6 +116,7 @@ step critical "artemis --version" artemis --version
 step critical "artemis --help" artemis --help
 step optional "host tools" bash -c 'adb version | head -n 1; ffmpeg -version | head -n 1; node -v; uv --version'
 step optional "pip freeze" python -m pip freeze
+step optional "disk usage" bash -c 'du -sh "${ARTEMIS_VENV}" "${HOME}/.cache/pip" "${PREFIX}" "${HOME}/.cargo" 2>/dev/null; df -h "${HOME}" 2>/dev/null' 
 
 {
     echo
