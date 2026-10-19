@@ -44,7 +44,7 @@ step() {
     local critical="$1" name="$2"
     shift 2
     local slug
-    slug="$(echo "${name}" | tr -c 'a-zA-Z0-9' '_')"
+    slug="$(printf '%s' "${name}" | tr -c 'a-zA-Z0-9' '_')"
     echo "::group::${name}"
     "$@" > "${OUT}/logs/${slug}.log" 2>&1
     local rc=$?
@@ -95,7 +95,9 @@ step optional "install Termux python-* packages" "${APT[@]}" install python-nump
     matplotlib python-greenlet python-rpds-py python-contourpy python-kiwisolver
 step optional "enable x11-repo" "${APT[@]}" install x11-repo
 step optional "apt update (x11)" "${APT[@]}" update
-step optional "install python-opencv-python" "${APT[@]}" install python-opencv-python
+# python-opencv-python links libdbus-1.so but does not depend on the dbus package
+# (observed: "dlopen failed: library libdbus-1.so not found").
+step optional "install python-opencv-python (+dbus)" "${APT[@]}" install python-opencv-python dbus
 
 # Copy the checkout (read-only mount) without VCS/virtualenv/node_modules.
 mkdir -p "${WORK}"
@@ -105,6 +107,11 @@ step critical "create venv with system site-packages" python -m venv --system-si
 # shellcheck disable=SC1091
 . "${HOME}/venv/bin/activate"
 export IMAGEIO_FFMPEG_EXE="${PREFIX}/bin/ffmpeg"
+# maturin (Rust extensions such as uuid-utils, pydantic-core, jiter) refuses to
+# build for Android without an explicit API level ("Failed to determine Android
+# API level"). Use the level the Termux Python was built for.
+ANDROID_API_LEVEL="$(python -c 'import sys; print(sys.getandroidapilevel())')"
+export ANDROID_API_LEVEL
 step critical "pip install ARTEMIS (non-locked, Termux system packages reused)" \
     python -m pip install --prefer-binary "${WORK}"
 step optional "pip check" python -m pip check

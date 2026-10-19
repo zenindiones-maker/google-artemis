@@ -41,3 +41,14 @@ def test_probe_never_uses_real_credentials_or_secrets():
     source = PROBE.read_text(encoding="utf-8")
     assert "secrets." not in source
     assert "API_KEY" not in source
+
+
+def test_rust_extensions_get_an_android_api_level_for_maturin():
+    source = PROBE.read_text(encoding="utf-8")
+    assert "export ANDROID_API_LEVEL" in source
+    assert "sys.getandroidapilevel()" in source
+
+
+def test_opencv_runtime_dependency_dbus_is_installed():
+    source = PROBE.read_text(encoding="utf-8")
+    assert "install python-opencv-python dbus" in source
