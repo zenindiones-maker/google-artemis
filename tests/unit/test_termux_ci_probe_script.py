@@ -64,3 +64,9 @@ def test_probe_runs_imports_outside_the_copied_checkout():
     assert source.index('cd "$(mktemp -d)"') < source.index(
         'step critical "import artemis CLI module"'
     )
+
+
+def test_termux_exec_is_preloaded_like_on_a_device():
+    source = PROBE.read_text(encoding="utf-8")
+    assert "install termux-exec" in source
+    assert 'export LD_PRELOAD="${lib}"' in source

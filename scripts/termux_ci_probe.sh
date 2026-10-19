@@ -120,6 +120,18 @@ export ANDROID_API_LEVEL
 # langchain-google-vertexai) otherwise download and compile numpy from source in
 # an isolated build env, which fails on bionic (observed: undeclared cpowf/cexpl
 # in npy_math_complex.c). Build them against the Termux python-numpy instead.
+# On a phone, termux-exec (LD_PRELOAD) rewrites '#!/bin/sh' shebangs to
+# $PREFIX/bin/sh. termux-docker does not preload it, so builds that run
+# './configure' (uvloop's vendored libuv) fail with "No such file or directory".
+step optional "install termux-exec" "${APT[@]}" install termux-exec
+for lib in "${PREFIX}/lib/libtermux-exec-ld-preload.so" "${PREFIX}/lib/libtermux-exec.so"; do
+    if [ -f "${lib}" ]; then
+        export LD_PRELOAD="${lib}"
+        break
+    fi
+done
+echo "LD_PRELOAD=${LD_PRELOAD:-<none>}" >> "${REPORT}.env"
+
 step optional "build tools for no-isolation builds" python -m pip install setuptools wheel "versioneer[toml]" meson-python ninja
 step optional "numpy-dependent sdists without build isolation" \
     python -m pip install --no-build-isolation bottleneck numexpr
