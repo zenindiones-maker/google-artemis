@@ -61,6 +61,15 @@ for p in "${STANDARD_PATHS[@]+"${STANDARD_PATHS[@]}"}"; do
         export PATH="${p}:${PATH}"
     fi
 done
+# Versioned portable Node.js installs (~/.local/share/node-vX.Y.Z) take precedence
+# over the legacy unversioned ~/.local/share/node directory from older releases.
+if [ "${IS_TERMUX}" != true ]; then
+    for node_bin in "${HOME}"/.local/share/node-v*/bin; do
+        if [ -x "${node_bin}/node" ]; then
+            export PATH="${node_bin}:${PATH}"
+        fi
+    done
+fi
 # Prefer native Termux binaries over any Linux-host tools in user-local directories.
 if [ "${IS_TERMUX}" = true ] && [ -n "${PREFIX:-}" ]; then
     export PATH="${PREFIX}/bin:${PATH}"
@@ -372,9 +381,24 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
             if [ -n "${NODE_ARCH}" ] && { [ "${OS_SYS}" = "linux" ] || [ "${OS_SYS}" = "darwin" ]; }; then
                 NODE_VER="v22.23.2"
                 NODE_DIR="${HOME}/.local/share/node-${NODE_VER}"
-                echo -e "   ${CYAN}📦 Installing portable Node.js ${NODE_VER} in user space (~/.local)...${NC}"
-                mkdir -p "${NODE_DIR}" "${HOME}/.local/bin"
-                if curl -fsSL --connect-timeout 5 --max-time 60 "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-${OS_SYS}-${NODE_ARCH}.tar.gz" | tar -xz -C "${NODE_DIR}" --strip-components=1 2>/dev/null; then
+                mkdir -p "${HOME}/.local/share" "${HOME}/.local/bin"
+                if [ ! -x "${NODE_DIR}/bin/node" ]; then
+                    echo -e "   ${CYAN}📦 Installing portable Node.js ${NODE_VER} in user space (~/.local)...${NC}"
+                    # Extract into a private temporary directory and move it into place only
+                    # when complete, so an interrupted download never leaves a half-installed
+                    # Node.js that later runs would pick up.
+                    NODE_TMP="$(mktemp -d "${HOME}/.local/share/.node-${NODE_VER}.partial.XXXXXX")"
+                    if curl -fsSL --connect-timeout 5 --max-time 60 "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-${OS_SYS}-${NODE_ARCH}.tar.gz" | tar -xz -C "${NODE_TMP}" --strip-components=1 2>/dev/null && [ -x "${NODE_TMP}/bin/node" ]; then
+                        if [ -e "${NODE_DIR}" ]; then
+                            # Keep (never delete) an incomplete directory left by older versions.
+                            mv "${NODE_DIR}" "${NODE_DIR}.incomplete-$$"
+                        fi
+                        mv "${NODE_TMP}" "${NODE_DIR}"
+                    else
+                        rm -rf "${NODE_TMP}"
+                    fi
+                fi
+                if [ -x "${NODE_DIR}/bin/node" ]; then
                     ln -sf "${NODE_DIR}/bin/node" "${HOME}/.local/bin/node"
                     ln -sf "${NODE_DIR}/bin/npm" "${HOME}/.local/bin/npm"
                     ln -sf "${NODE_DIR}/bin/npx" "${HOME}/.local/bin/npx"

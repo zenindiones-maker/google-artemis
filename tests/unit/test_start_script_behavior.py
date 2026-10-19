@@ -242,3 +242,71 @@ def test_desktop_linux_still_installs_missing_tools_with_apt(tmp_path: Path) -> 
     assert "Termux detected" not in result.stdout
     # The portable scrcpy fallback is still attempted on desktop Linux.
     assert any("scrcpy-linux-x86_64" in call for call in box.calls("curl"))
+
+
+def _desktop_without_node(box: Sandbox) -> None:
+    _common_tools(box, box.stubs)
+    for tool in ("adb", "ffmpeg", "scrcpy"):
+        box.stub(tool)
+
+
+def _fake_node(path: Path, version: str) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for name, body in (("node", f'[ "$1" = "-v" ] && echo {version}'), ("npm", "echo 10.9.0")):
+        exe = path / name
+        exe.write_text(f"#!/bin/sh\n{body}\nexit 0\n", encoding="utf-8")
+        exe.chmod(0o755)
+
+
+def test_failed_portable_node_download_leaves_no_partial_install(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path, showcase_built=False)
+    _desktop_without_node(box)
+
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    assert any("nodejs.org/dist/v22.23.2" in call for call in box.calls("curl"))
+    share = box.home / ".local" / "share"
+    assert not (share / "node-v22.23.2").exists()
+    assert list(share.glob(".node-*.partial.*")) == []
+    assert "Could not configure compatible Node.js" in result.stdout
+
+
+def test_existing_incomplete_node_dir_is_preserved_not_deleted(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path, showcase_built=False)
+    _desktop_without_node(box)
+    incomplete = box.home / ".local" / "share" / "node-v22.23.2"
+    incomplete.mkdir(parents=True)
+    (incomplete / "user-note.txt").write_text("keep me", encoding="utf-8")
+
+    box.run()
+
+    assert (incomplete / "user-note.txt").read_text(encoding="utf-8") == "keep me"
+
+
+def test_shared_legacy_node_directory_is_never_removed(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path, showcase_built=False)
+    _desktop_without_node(box)
+    legacy = box.home / ".local" / "share" / "node"
+    _fake_node(legacy / "bin", "v18.19.0")
+    (legacy / "shared-config").write_text("shared", encoding="utf-8")
+
+    box.run()
+
+    assert (legacy / "shared-config").exists()
+    assert (legacy / "bin" / "node").exists()
+
+
+def test_versioned_portable_node_takes_precedence_over_legacy_dir(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path, showcase_built=False)
+    _desktop_without_node(box)
+    _fake_node(box.home / ".local" / "share" / "node" / "bin", "v18.19.0")
+    _fake_node(box.home / ".local" / "share" / "node-v22.23.2" / "bin", "v22.23.2")
+    showcase = box.project / "apps" / "showcase_ui"
+    showcase.mkdir(parents=True)
+
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    assert "Node.js v22.23.2" in result.stdout
+    assert not any("nodejs.org" in call for call in box.calls("curl"))
