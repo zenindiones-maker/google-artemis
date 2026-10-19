@@ -174,6 +174,20 @@ if ! command -v scrcpy >/dev/null 2>&1 && [ "${IS_TERMUX}" != true ]; then MISSI
 
 if [ "${IS_TERMUX}" = true ]; then
     echo -e "   ${YELLOW}ℹ Termux detected. Skipping desktop OS binary installers; use Termux packages for host tools.${NC}"
+    TERMUX_PKGS=()
+    for tool in "${MISSING_CORE[@]+"${MISSING_CORE[@]}"}"; do
+        case "${tool}" in
+            adb) TERMUX_PKGS+=("android-tools") ;;
+            *) TERMUX_PKGS+=("${tool}") ;;
+        esac
+    done
+    if [ ${#TERMUX_PKGS[@]} -gt 0 ]; then
+        echo -e "   ${YELLOW}⚠ Missing host tools (${MISSING_CORE[*]}). Install them with:${NC}"
+        echo -e "      ${BOLD}pkg install ${TERMUX_PKGS[*]}${NC}"
+    fi
+    echo -e "   ${CYAN}📱 To control this same phone from Termux, enable Wireless debugging in Developer options, then:${NC}"
+    echo -e "      adb pair 127.0.0.1:<pairing-port>    # code shown under 'Pair device with pairing code'"
+    echo -e "      adb connect 127.0.0.1:<debug-port>   # port shown on the Wireless debugging screen"
 elif [ ${#MISSING_CORE[@]} -gt 0 ]; then
     OS_NAME="$(uname -s)"
     if [ "${OS_NAME}" = "Darwin" ]; then
@@ -391,6 +405,9 @@ if [ ! -f "${SHOWCASE_INDEX}" ] && [ ! -f "${SHOWCASE_INDEX_ALT1}" ] && [ ! -f "
         )
     else
         echo -e "   ${YELLOW}⚠ Could not configure compatible Node.js (>= 22.22.0). Showcase UI will serve fallback build notice.${NC}"
+        if [ "${IS_TERMUX}" = true ]; then
+            echo -e "      In Termux, install a compatible Node.js with: ${BOLD}pkg install nodejs-lts${NC}"
+        fi
     fi
 fi
 

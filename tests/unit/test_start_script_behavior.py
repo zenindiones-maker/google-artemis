@@ -174,3 +174,71 @@ def test_desktop_without_uv_still_uses_astral_installer(tmp_path: Path) -> None:
     box.run()
 
     assert any("astral.sh/uv/install.sh" in call for call in box.calls("curl"))
+
+
+def _common_tools(box: Sandbox, where: Path) -> None:
+    box.stub("uv", where=where)
+
+
+def test_termux_lists_pkg_names_for_missing_tools_and_adb_wireless_steps(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path)
+    prefix_bin = _termux(box, tmp_path)
+    _common_tools(box, prefix_bin)
+
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    assert "pkg install android-tools ffmpeg" in result.stdout
+    assert "scrcpy" not in result.stdout.split("Missing host tools", 1)[-1].split("\n", 1)[0]
+    assert "adb pair 127.0.0.1:" in result.stdout
+    assert "adb connect 127.0.0.1:" in result.stdout
+    for desktop_tool in ("apt-get", "dnf", "pacman", "brew", "sudo"):
+        assert box.calls(desktop_tool) == []
+    assert box.calls("curl") == []
+
+
+def test_termux_with_all_tools_prints_no_install_hint(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path)
+    prefix_bin = _termux(box, tmp_path)
+    _common_tools(box, prefix_bin)
+    box.stub("adb", where=prefix_bin)
+    box.stub("ffmpeg", where=prefix_bin)
+
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    assert "Missing host tools" not in result.stdout
+    assert any(call.startswith("start-server") for call in box.calls("adb"))
+
+
+def test_termux_with_old_node_suggests_nodejs_lts_without_downloading(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path, showcase_built=False)
+    prefix_bin = _termux(box, tmp_path)
+    _common_tools(box, prefix_bin)
+    box.stub("node", body='[ "$1" = "-v" ] && echo v20.11.0', where=prefix_bin)
+    box.stub("npm", body="echo 10.0.0", where=prefix_bin)
+
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    assert "pkg install nodejs-lts" in result.stdout
+    assert box.calls("curl") == []
+    assert box.calls("npm") == []
+    assert not any((box.home / ".local" / "share").glob("node*"))
+
+
+def test_desktop_linux_still_installs_missing_tools_with_apt(tmp_path: Path) -> None:
+    box = _make_sandbox(tmp_path)
+    _common_tools(box, box.stubs)
+    box.stub("id", body='[ "$1" = "-u" ] && echo 0')
+    box.stub("apt-get")
+
+    result = box.run()
+
+    assert result.returncode == 0, result.stderr
+    installs = [call for call in box.calls("apt-get") if " install " in f" {call} "]
+    assert installs, box.log.read_text() if box.log.exists() else "no calls"
+    assert {"adb", "ffmpeg", "scrcpy"} <= set(installs[0].split())
+    assert "Termux detected" not in result.stdout
+    # The portable scrcpy fallback is still attempted on desktop Linux.
+    assert any("scrcpy-linux-x86_64" in call for call in box.calls("curl"))
