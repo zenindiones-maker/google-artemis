@@ -26,7 +26,9 @@ import importlib
 from types import ModuleType
 from typing import Any
 
-# Module -> extra that provides it (see [project.optional-dependencies]).
+# Module -> dependency group (documentation label, see docs/termux-core-dependencies.md).
+# These are NOT pip extras yet: every module below is still a default dependency of
+# the desktop install, so error messages point to the concrete package to install.
 MODULE_EXTRAS: dict[str, str] = {
     "cv2": "vision",
     "numpy": "vision",
@@ -40,6 +42,20 @@ MODULE_EXTRAS: dict[str, str] = {
 }
 
 
+# Module -> (pip package, Termux pkg or None when pip is the way on Termux too).
+MODULE_PACKAGES: dict[str, tuple[str, str | None]] = {
+    "cv2": ("opencv-python", "python-opencv-python"),
+    "numpy": ("numpy", "python-numpy"),
+    "imageio_ffmpeg": ("imageio-ffmpeg", "ffmpeg"),
+    "jupyter_client": ("jupyter-client ipykernel", None),
+    "zmq": ("pyzmq", None),
+    "langchain_openai": ("langchain-openai", None),
+    "langchain_anthropic": ("langchain-anthropic", None),
+    "langchain_google_vertexai": ("langchain-google-vertexai", None),
+    "fastapi": ("fastapi", None),
+}
+
+
 class OptionalDependencyError(ImportError):
     """Raised when a feature needs an optional dependency that is not installed."""
 
@@ -47,10 +63,14 @@ class OptionalDependencyError(ImportError):
         self.module = module
         self.feature = feature
         self.extra = extra or MODULE_EXTRAS.get(module.split(".")[0], "full")
+        top = module.split(".")[0]
+        package, termux_pkg = MODULE_PACKAGES.get(top, (top, None))
+        hint = f"Install it with: pip install {package} (included in the default desktop install: uv sync)"
+        if termux_pkg:
+            hint += f"; on Termux: pkg install {termux_pkg}"
         super().__init__(
             f"{feature} requires the optional dependency '{module}', which is not installed. "
-            f"Install it with: pip install 'artemis[{self.extra}]' "
-            f"(Termux: bash scripts/install_termux.sh --profile {self.extra})."
+            f"{hint}."
         )
 
 

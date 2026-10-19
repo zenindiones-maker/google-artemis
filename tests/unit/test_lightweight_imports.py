@@ -174,8 +174,10 @@ def test_optional_feature_fails_with_actionable_error_and_others_still_import(
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
     assert "EXTRA=vision" in proc.stdout
-    assert "pip install 'artemis[vision]'" in proc.stdout
-    assert "--profile vision" in proc.stdout
+    # Points to the concrete package (pip extras do not exist yet; E2 decides them).
+    assert "pip install opencv-python" in proc.stdout
+    assert "pkg install python-opencv-python" in proc.stdout
+    assert "artemis[" not in proc.stdout and "--profile" not in proc.stdout
     assert "ADB=" in proc.stdout
 
 
@@ -225,3 +227,22 @@ def test_import_time_adb_sync_is_quiet_but_explicit_activation_announces(caplog)
     assert calls[1][0] == "info"
     source = Path(mod.__file__).read_text()
     assert "adb_server_connection.synchronize_environment(announce=False)" in source
+
+
+def test_lazy_modules_are_still_default_desktop_dependencies() -> None:
+    """Lazy loading must not change the desktop install: all stay default deps."""
+    import tomllib
+
+    from packaging.requirements import Requirement
+
+    from artemis.utils.optional_deps import MODULE_PACKAGES
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    default = {Requirement(d).name.lower() for d in project["dependencies"]}
+    for package_names, _termux in MODULE_PACKAGES.values():
+        for name in package_names.split():
+            if name == "pyzmq":  # transitive via jupyter-client/ipykernel
+                continue
+            assert name in default, name
+    doc = (ROOT / "docs" / "termux-core-dependencies.md").read_text(encoding="utf-8")
+    assert "does not change any install" in doc
