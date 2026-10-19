@@ -159,3 +159,13 @@ def test_preflight_is_read_only(tmp_path: Path) -> None:
     assert proc.returncode == 0
     assert "nada foi alterado" in proc.stdout
     assert list(home.rglob("*")) == []
+
+
+def test_pasted_as_heredoc_falls_back_to_the_clone(tmp_path: Path) -> None:
+    env, _, home = _sandbox(tmp_path, devices="R58X123\\tdevice\\n")
+    env.pop("ARTEMIS_REPO")
+    (home / "google-artemis").symlink_to(ROOT)
+    proc = subprocess.run(
+        ["bash"], input=VALIDATE.read_text(), env=env, capture_output=True, text=True, timeout=300
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr

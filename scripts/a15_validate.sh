@@ -29,6 +29,8 @@ set -u
 
 VENV="${ARTEMIS_VENV:-${HOME}/.artemis-venv}"
 REPO="${ARTEMIS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)}"
+# Pasted as a heredoc there is no script path: fall back to the clone location.
+[ -f "${REPO}/scripts/termux_probe_metrics.py" ] || REPO="${HOME}/google-artemis"
 ROOT="${ARTEMIS_VALIDATION_ROOT:-${HOME}/artemis-validation}"
 OUT="${ROOT}/$(date +%Y%m%d-%H%M%S)"
 STEP_TIMEOUT="${STEP_TIMEOUT:-120}"
