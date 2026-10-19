@@ -1,0 +1,17 @@
+ .github/workflows/termux-docker-probe.yml       |  12 ++
+ artemis/interfaces/cli/commands/device.py       | 161 ++++++++++++++++
+ artemis/interfaces/cli/commands/helper.py       |  11 ++
+ artemis/interfaces/cli/main.py                  |   6 +
+ requirements/termux-source-built.txt            |  15 ++
+ scripts/a15_preflight.sh                        | 128 +++++++++++++
+ scripts/a15_validate.sh                         | 174 ++++++++++++++++++
+ scripts/install_termux.sh                       | 100 +++++++++-
+ scripts/termux_ci_probe.sh                      |  33 +++-
+ scripts/termux_probe_metrics.py                 |  72 ++++++++
+ scripts/verify_artifacts.py                     | 131 ++++++++++++-
+ tests/unit/test_a15_scripts.py                  | 171 +++++++++++++++++
+ tests/unit/test_device_cli.py                   | 134 ++++++++++++++
+ tests/unit/test_helper_cli_serial.py            |  58 ++++++
+ tests/unit/test_hierarchy_backend_visibility.py |  11 ++
+ tests/unit/test_install_termux_wheelhouse.py    | 234 ++++++++++++++++++++++++
+ 16 files changed, 1440 insertions(+), 11 deletions(-)

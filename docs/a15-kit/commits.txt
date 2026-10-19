@@ -1,0 +1,8 @@
+fd1fd494a99eca1e95fe1e5c3defad610e2f18e7 fix(a15): pasted-heredoc run finds the repo at ~/google-artemis
+540b06d219441be7db33070c4bded3ca3f016807 test(a15): simpler no-network/no-install check for the validation script (ruff E741)
+6b6ea3d73b4b05bd7cd86cc22673aaed79789a24 feat(scripts): A15 on-device validation (LLM-free artemis device flow, timeouts, SIM-gated input, no network) and read-only preflight
+3e8bf623e98286311fe665266bdc69905ddfc0f5 feat(termux): CI probe builds a device wheelhouse; install_termux.sh --wheelhouse verifies then installs offline without rust/clang
+aba247165f873723a85383b6c9c5ddc30629645e feat(scripts): wheelhouse manifest writer and cross-checking verifier (android arm64 only, pinned SHA256SUMS)
+e1e00ae92c100e10adbc0e2d73fc7fdb2c1a7b4d feat(cli): 'artemis device info|screenshot|key' - LLM-free device control through the Artemis ADB driver, with timeouts and exit codes
+a9f4242a5f3b053648213cb3c4e612f9ccfe375f test(helper): attach the simulated device in helper CLI tests that pass --serial
+99d10b1d215d27b554540961701165218d2bcb72 fix(helper): an explicit --serial that is not attached/authorized exits 1 instead of reporting 'not installed'
