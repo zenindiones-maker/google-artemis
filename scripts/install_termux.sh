@@ -120,9 +120,29 @@ fi
 echo "LD_PRELOAD=${LD_PRELOAD:-<none>}"
 
 # --- 3. Virtualenv + ARTEMIS ---------------------------------------------------
+# Contamination guard: variables from another Python environment must not leak into
+# the venv creation or pip install.
+for var in PYTHONPATH PYTHONHOME VIRTUAL_ENV PIP_TARGET PIP_PREFIX PIP_USER; do
+    if [ -n "${!var:-}" ]; then
+        echo "⚠ Ignoring ${var}=${!var} (set by another Python environment)"
+        unset "${var}"
+    fi
+done
+
+py_minor() { "$1" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true; }
+
 if [ ! -x "${VENV}/bin/python" ]; then
     run python -m venv --system-site-packages "${VENV}"
 else
+    if [ "${DRY_RUN}" != true ]; then
+        venv_minor="$(py_minor "${VENV}/bin/python")"
+        system_minor="$(py_minor python)"
+        if [[ "${venv_minor}" =~ ^[0-9]+\.[0-9]+$ && "${system_minor}" =~ ^[0-9]+\.[0-9]+$ && "${venv_minor}" != "${system_minor}" ]]; then
+            echo "✖ ${VENV} was created with Python ${venv_minor}, but Termux now has Python ${system_minor}." >&2
+            echo "  It was left untouched. Move it aside (mv ${VENV} ${VENV}.old) and re-run this installer." >&2
+            exit 1
+        fi
+    fi
     echo "Reusing existing virtualenv ${VENV}"
 fi
 run "${VENV}/bin/python" -m pip install --prefer-binary -c "${CONSTRAINTS}" "${REPO}/packages/artemis-client"
