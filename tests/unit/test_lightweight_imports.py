@@ -105,7 +105,18 @@ def test_cli_help_works_without_optional_extras(tmp_path: Path) -> None:
     assert "Activated" not in proc.stdout + proc.stderr
 
 
-def test_cli_import_does_not_load_heavy_modules_even_when_installed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("system_ffmpeg", [True, False], ids=["ffmpeg-on-path", "no-ffmpeg"])
+def test_cli_import_does_not_load_heavy_modules_even_when_installed(
+    tmp_path: Path, system_ffmpeg: bool
+) -> None:
+    # Deterministic PATH: the result no longer depends on whether the host has ffmpeg
+    # (the 8c970fa CI failure came from GitHub runners lacking it).
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    if system_ffmpeg:
+        stub = bin_dir / "ffmpeg"
+        stub.write_text("#!/bin/sh\necho 'ffmpeg version 0-stub'\n", encoding="utf-8")
+        stub.chmod(0o755)
     code = f"""
         import sys
         sys.path.insert(0, {str(ROOT)!r})
@@ -117,16 +128,20 @@ def test_cli_import_does_not_load_heavy_modules_even_when_installed(tmp_path: Pa
         capture_output=True,
         text=True,
         cwd=tmp_path,
-        env={**os.environ, "HOME": str(tmp_path), "GOOGLE_API_KEY": "ci-not-a-real-key"},
+        env={
+            **os.environ,
+            "PATH": str(bin_dir),
+            "HOME": str(tmp_path),
+            "GOOGLE_API_KEY": "ci-not-a-real-key",
+        },
         timeout=120,
         check=False,
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
     loaded = set(filter(None, proc.stdout.strip().split(",")))
-    # Toolchain resolution at import (artemis/toolchain/__init__.py) falls back to the
-    # ffmpeg binary shipped by imageio_ffmpeg when no system ffmpeg is on PATH (seen
-    # on GitHub runners). That fallback is existing behaviour, not a heavy stack.
-    if shutil.which("ffmpeg") is None:
+    if not system_ffmpeg:
+        # Toolchain resolution at import (artemis/toolchain/__init__.py) may fall back
+        # to the ffmpeg binary shipped by imageio_ffmpeg. Existing desktop behaviour.
         loaded.discard("imageio_ffmpeg")
     assert loaded == set()
 
