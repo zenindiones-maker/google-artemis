@@ -136,7 +136,7 @@ SAMPLER_PID=$!
 step critical "scripts/install_termux.sh" env PIP_NO_CACHE_DIR=1 bash "${WORK}/scripts/install_termux.sh"
 touch "${STOP_FILE}"
 wait "${SAMPLER_PID}" 2>/dev/null || true
-step optional "disk usage peak/final" python "${METRICS}" summarize "${OUT}/disk-samples.csv" --out "${OUT}/disk-usage.md"
+step optional "disk usage peak/final" python "${METRICS}" summarize "${OUT}/disk-samples.csv" --interval 5 --out "${OUT}/disk-usage.md"
 # shellcheck disable=SC1091
 . "${ARTEMIS_VENV}/bin/activate"
 export IMAGEIO_FFMPEG_EXE="${PREFIX}/bin/ffmpeg"
@@ -145,7 +145,9 @@ step optional "installed Termux package versions" bash -c \
     "grep -vE '^(#|\$)' '${WORK}/requirements/termux-pkg.txt' | awk '{print \$1}' | xargs dpkg-query -W -f='\${Package} \${Version} \${Installed-Size}\n'"
 step critical "pip check" python -m pip check
 step critical "every constraint installed at its exact version" \
-    python "${METRICS}" verify --constraints "${CONSTRAINTS}"
+    python "${METRICS}" verify --constraints "${CONSTRAINTS}" --require-all-pinned \
+    --allow-unpinned pip --allow-unpinned artemis --allow-unpinned artemis-client
+step optional "venv-local dists (pip list --local)" python -m pip list --local --format=freeze
 step optional "native and core imports" native_imports
 step critical "import artemis CLI module" python -c "import artemis.interfaces.cli.main"
 step critical "artemis --version" artemis --version

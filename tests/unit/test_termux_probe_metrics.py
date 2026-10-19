@@ -155,3 +155,44 @@ def test_probe_wires_metrics_as_critical_steps_in_order() -> None:
     assert 'touch "${STOP_FILE}"' in text
     assert "PIP_NO_CACHE_DIR=1" in text  # real install not served from probe-built wheels
     assert "source-builds.md" in text and "disk-usage.md" in text
+
+
+def test_reports_state_interval_and_missed_spike_limitation(tmp_path: Path) -> None:
+    samples = tmp_path / "s.csv"
+    samples.write_text("timestamp,path,bytes\n1,/h,100\n2,/h,50\n")
+    md = tmp_path / "d.md"
+    assert metrics.main(["summarize", str(samples), "--interval", "5", "--out", str(md)]) == 0
+    text = md.read_text()
+    assert "Sampling interval: 5 s" in text and "may be missed" in text
+    c = _constraints(tmp_path, "orjson==3.11.0\n")
+    out = tmp_path / "o"
+    assert metrics.main(
+        ["build-each", "--constraints", str(c), "--out", str(out), "--python",
+         str(_fake_python(tmp_path, set())), "--interval", "0.5", "orjson"]
+    ) == 0  # fmt: skip
+    build_md = (out / "source-builds.md").read_text()
+    assert "Sampling interval: 0.5 s" in build_md and "may be missed" in build_md
+
+
+def test_unpinned_venv_dists_are_reported() -> None:
+    pins = {"orjson": ("orjson", "3.11.0")}
+    venv = {"orjson": "3.11.0", "setuptools": "84.0.0", "pip": "26.0", "artemis": "0.1"}
+    problems = metrics.unpinned_in_prefix(pins, venv, {"pip", "artemis"})
+    assert problems == ["setuptools==84.0.0: installed in the venv but not pinned in constraints"]
+
+
+def test_verify_require_all_pinned(tmp_path: Path, monkeypatch) -> None:
+    c = _constraints(tmp_path, "a==1.0\n")
+    monkeypatch.setattr(metrics, "installed_versions", lambda: {"a": "1.0", "wheel": "0.48"})
+    monkeypatch.setattr(metrics, "venv_versions", lambda: {"a": "1.0", "wheel": "0.48"})
+    assert metrics.main(["verify", "--constraints", str(c)]) == 0
+    assert metrics.main(["verify", "--constraints", str(c), "--require-all-pinned"]) == 1
+    assert metrics.main(
+        ["verify", "--constraints", str(c), "--require-all-pinned", "--allow-unpinned", "wheel"]
+    ) == 0  # fmt: skip
+
+
+def test_probe_uses_require_all_pinned_and_interval_note() -> None:
+    text = PROBE.read_text()
+    assert "--require-all-pinned" in text
+    assert 'summarize "${OUT}/disk-samples.csv" --interval 5' in text

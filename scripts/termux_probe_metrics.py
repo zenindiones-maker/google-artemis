@@ -134,7 +134,16 @@ def build_one(
     return BuildResult(name, version, seconds, proc.returncode == 0, peak, detail)
 
 
-def write_build_reports(results: list[BuildResult], out_dir: Path) -> str:
+def sampling_note(interval: float) -> str:
+    return (
+        f"Sampling interval: {interval:g} s. Peak = largest observed sample; "
+        "short spikes between samples may be missed, so the true peak can be higher."
+    )
+
+
+def write_build_reports(
+    results: list[BuildResult], out_dir: Path, interval: float | None = None
+) -> str:
     with (out_dir / "source-builds.csv").open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
         writer.writerow(["package", "version", "wall_seconds", "result", "peak_build_tmp_bytes"])
@@ -155,6 +164,9 @@ def write_build_reports(results: list[BuildResult], out_dir: Path) -> str:
     failed = [r.name for r in results if not r.ok]
     lines.append("")
     lines.append(f"Total build time: {total:.1f} s; failed: {', '.join(failed) or 'none'}")
+    if interval is not None:
+        lines.append("")
+        lines.append("Build-temp disk: " + sampling_note(interval))
     markdown = "\n".join(lines) + "\n"
     (out_dir / "source-builds.md").write_text(markdown, encoding="utf-8")
     return markdown
@@ -183,7 +195,7 @@ def cmd_build_each(args: argparse.Namespace) -> int:
                 args.interval,
             )
         )
-    sys.stdout.write(write_build_reports(results, out_dir))
+    sys.stdout.write(write_build_reports(results, out_dir, args.interval))
     return 0 if all(r.ok for r in results) else 1
 
 
@@ -228,6 +240,11 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     lines = ["| path | peak | final |", "|---|---|---|"]
     for path, (peak, final) in summary.items():
         lines.append(f"| {path} | {human(peak)} | {human(final)} |")
+    lines.append("")
+    if args.interval is not None:
+        lines.append(sampling_note(args.interval))
+    else:
+        lines.append("Peak = largest observed sample; short spikes between samples may be missed.")
     markdown = "\n".join(lines) + "\n"
     if args.out:
         args.out.write_text(markdown, encoding="utf-8")
@@ -260,13 +277,40 @@ def installed_versions() -> dict[str, str]:
     return versions
 
 
+def unpinned_in_prefix(pins: dict[str, tuple[str, str]], prefix_dists: dict[str, str],
+                       allowed: set[str]) -> list[str]:  # fmt: skip
+    """Dists installed inside the venv itself that the constraints do not pin."""
+    return [
+        f"{name}=={version}: installed in the venv but not pinned in constraints"
+        for name, version in sorted(prefix_dists.items())
+        if name not in pins and name not in allowed
+    ]
+
+
+def venv_versions() -> dict[str, str]:
+    """Dists located under sys.prefix (the venv), excluding system-site (pkg) ones."""
+    from importlib import metadata
+
+    prefix = Path(sys.prefix).resolve()
+    versions: dict[str, str] = {}
+    for dist in metadata.distributions():
+        name = dist.metadata.get("Name")
+        location = Path(str(dist.locate_file(""))).resolve()
+        if name and location.is_relative_to(prefix):
+            versions.setdefault(canonical(name), dist.version)
+    return versions
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     pins = read_pins(args.constraints)
     for excluded in args.exclude:
         pins.pop(canonical(excluded), None)
     problems = verify_pins(pins, installed_versions())
+    if args.require_all_pinned:
+        allowed = {canonical(n) for n in args.allow_unpinned}
+        problems += unpinned_in_prefix(pins, venv_versions(), allowed)
     if problems:
-        print(f"{len(problems)} pinned package(s) not installed at the exact version:")
+        print(f"{len(problems)} problem(s) with exact-version pinning:")
         for problem in problems:
             print(f"  - {problem}")
         return 1
@@ -299,11 +343,16 @@ def main(argv: list[str] | None = None) -> int:
     summarize = sub.add_parser("summarize")
     summarize.add_argument("samples", type=Path)
     summarize.add_argument("--out", type=Path)
+    summarize.add_argument("--interval", type=float, help="sampling interval used, for the note")
     summarize.set_defaults(func=cmd_summarize)
 
     verify = sub.add_parser("verify")
     verify.add_argument("--constraints", type=Path, required=True)
     verify.add_argument("--exclude", action="append", default=[])
+    verify.add_argument("--require-all-pinned", action="store_true",
+                        help="also fail on venv dists missing from the constraints")  # fmt: skip
+    verify.add_argument("--allow-unpinned", action="append", default=[],
+                        help="venv dist allowed without a pin (e.g. pip, the project itself)")  # fmt: skip
     verify.set_defaults(func=cmd_verify)
 
     args = parser.parse_args(argv)
