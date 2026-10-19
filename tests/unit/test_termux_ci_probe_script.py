@@ -57,3 +57,10 @@ def test_opencv_runtime_dependency_dbus_is_installed():
 def test_numpy_dependent_sdists_build_against_termux_numpy():
     source = PROBE.read_text(encoding="utf-8")
     assert "--no-build-isolation bottleneck numexpr" in source
+
+
+def test_probe_runs_imports_outside_the_copied_checkout():
+    source = PROBE.read_text(encoding="utf-8")
+    assert source.index('cd "$(mktemp -d)"') < source.index(
+        'step critical "import artemis CLI module"'
+    )

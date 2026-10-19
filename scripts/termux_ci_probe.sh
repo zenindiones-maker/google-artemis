@@ -103,6 +103,10 @@ step optional "install python-opencv-python (+dbus)" "${APT[@]}" install python-
 mkdir -p "${WORK}"
 tar -C "${REPO}" --exclude=.git --exclude=.venv --exclude=node_modules -cf - . | tar -C "${WORK}" -xf -
 
+# Run everything else from a neutral directory: from ${HOME}, the copied
+# ./artemis checkout would shadow the installed package as a namespace package.
+cd "$(mktemp -d)" || exit 1
+
 step critical "create venv with system site-packages" python -m venv --system-site-packages "${HOME}/venv"
 # shellcheck disable=SC1091
 . "${HOME}/venv/bin/activate"
@@ -141,7 +145,7 @@ PY
         && python -m pip install --no-deps "${WORK}/packages/artemis-client" \
         && python -m pip install --no-deps "${WORK}"
 }
-if ! python -c "import artemis" >/dev/null 2>&1; then
+if ! python -c "import artemis.interfaces.cli.main" >/dev/null 2>&1; then
     step optional "DIAGNOSTIC install without langchain-google-vertexai" diagnostic_install_without_vertexai
 fi
 step optional "pip check" python -m pip check
