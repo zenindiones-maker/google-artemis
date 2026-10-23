@@ -629,3 +629,37 @@ def test_pro_pixel_record_is_normalized_exactly_once(tmp_path):
 
     again = normalize_any_structure(row["action_taken"], 1080, 2400)
     assert again == row["action_taken"]
+
+
+def test_background_thread_is_started_before_being_published(tmp_path):
+    """A pending-thread registry must never expose an unstarted thread."""
+    import threading
+
+    mock_ctx = MagicMock(spec=ArtemisContext)
+    mock_execution_setup = MagicMock()
+    mock_execution_setup.traces_path = str(tmp_path)
+    mock_ctx.execution_setup = mock_execution_setup
+    mock_ctx.device = None
+    engine = DataEngine(mock_ctx)
+
+    original_start = threading.Thread.start
+    published_before_start = []
+
+    def inspect_start(thread, *args, **kwargs):
+        if thread.name == "artemis-storage":
+            published_before_start.append(thread in engine._pending_threads)
+        return original_start(thread, *args, **kwargs)
+
+    with patch(
+        "artemis.data_engine.engine.threading.Thread.start",
+        new=inspect_start,
+    ):
+        engine._run_in_background(lambda: None)
+
+    for thread in list(engine._pending_threads):
+        if thread.ident is not None:
+            thread.join()
+
+    assert published_before_start == [False], (
+        "A background thread was published before Thread.start()"
+    )

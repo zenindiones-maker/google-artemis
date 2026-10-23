@@ -7,24 +7,13 @@
   // 1. Global Default Model (Applied to all sub-agents unless overridden below)
   // ------------------------------------------------------------------------------
   "default": {
-    "provider": "google",
-    "model": "gemini-3.8-flash",
-    "thinking_level": "medium",
-    "fallback": {
-      "provider": "google",
-      "model": "gemini-3.7-flash",
-      "thinking_level": "medium"
-    }
-  },
-
-  // ------------------------------------------------------------------------------
-  // 2. Ready-to-Use Presets (Switch easily in code or CLI)
-  // ------------------------------------------------------------------------------
-  "presets": {
-    "gemini-flagship": {
-      "provider": "google",
-      "model": "gemini-3.8-flash",
-      "fallback": { "provider": "google", "model": "gemini-3.7-flash" }
+        "provider": "ollama",
+        "model": "qwen2.5:0.5b",
+        "thinking_level": "medium",
+        "fallback": {
+            "provider": "ollama",
+            "model": "qwen2.5:0.5b"
+        }
     },
     "gemini-flash": {
       "provider": "google",

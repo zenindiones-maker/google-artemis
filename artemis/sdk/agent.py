@@ -134,6 +134,16 @@ class Agent(AgentBase):
                 "model_ready", "Model connection is ready (fake LLM)", session_id=self._session_id
             )
             return
+        if os.environ.get("ARTEMIS_LOCAL_ONLY") == "1":
+            publish_startup_progress(
+                "model_warmup", "Checking local Ollama model", session_id=self._session_id
+            )
+            publish_startup_progress(
+                "model_ready", "Local-only mode enabled; Gemini pre-warming skipped",
+                session_id=self._session_id,
+            )
+            logger.info("Local-only mode: skipping Gemini connection pre-warming.")
+            return
         publish_startup_progress(
             "model_warmup", "Warming the model connection", session_id=self._session_id
         )

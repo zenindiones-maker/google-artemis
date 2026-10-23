@@ -37,6 +37,9 @@ from artemis.graph.state import State
 from artemis.services.llm import get_llm
 from third_party.mobile_use.utils.logger import get_logger
 
+from artemis.tools.mobile.open_url_firefox import launch_url_in_firefox
+from artemis.tools.web_access import web_fetch, web_search
+
 logger = get_logger(__name__)
 
 
@@ -234,6 +237,12 @@ class UniversalRunnerMixin:
                 y_max=args.get("y_max"),
                 zoom_factor=args.get("zoom_factor", 2.0),
             )
+        if name == "web_search":
+            return {"text": await web_search(args.get("query", ""), args.get("max_results", 5))}
+        if name == "web_fetch":
+            return {"text": await web_fetch(args.get("url", ""))}
+        if name == "open_url_firefox":
+            return {"text": launch_url_in_firefox(args.get("url"))}
         return {"text": f"Error: Tool '{name}' is not recognized."}
 
     @staticmethod

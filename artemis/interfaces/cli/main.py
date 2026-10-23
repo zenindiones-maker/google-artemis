@@ -23,6 +23,8 @@ from artemis.interfaces.cli.commands.device import device_app
 from artemis.interfaces.cli.commands.helper import helper_app
 from artemis.interfaces.cli.commands.init import init_command
 from artemis.interfaces.cli.commands.mcp import mcp_command
+from artemis.interfaces.cli.commands.open_url import open_url_command
+from artemis.interfaces.cli.commands.local_run import local_run_command
 from artemis.interfaces.cli.commands.run import run_command
 from artemis.interfaces.cli.commands.server import server_app
 from artemis.interfaces.cli.commands.server_lifecycle import (
@@ -55,6 +57,8 @@ app.command(name="restart", help="Restart running Artemis Web UI & server.")(res
 app.command(name="stop", help="Stop running Artemis Web UI & server.")(stop_command)
 app.command(name="status", help="Display Artemis Web UI & server status.")(status_command)
 app.command(name="run", help="Execute an autonomous task on a mobile device.")(run_command)
+app.command(name="open-url", help="Open an approved URL in Android Firefox without ADB automation.")(open_url_command)
+app.command(name="local-run", help="Run a restricted task using local Ollama without ADB.")(local_run_command)
 app.command(name="init", help="Interactive quickstart wizard to configure API keys & device.")(
     init_command
 )

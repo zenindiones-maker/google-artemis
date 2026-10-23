@@ -46,6 +46,9 @@ from artemis.llm.reliability import (
 from artemis.services.llm import _record_llm_event, _record_llm_retry
 from third_party.mobile_use.utils.logger import get_logger
 
+from artemis.tools.mobile.open_url_firefox import launch_url_in_firefox
+from artemis.tools.web_access import web_fetch, web_search
+
 logger = get_logger(__name__)
 
 #: Loads a local image as a ``Part`` (inline bytes or a File API reference).
@@ -779,6 +782,24 @@ Initial marked UI elements list (corresponding to numbers ①, ②... in the ima
             tool_call_trace["response"] = res
             await self._append_tool_response_with_images(
                 name, res, get_image_part, tool_response_parts
+            )
+        elif name == "web_search":
+            res = {"text": await web_search(args.get("query", ""), args.get("max_results", 5))}
+            tool_call_trace["response"] = res
+            tool_response_parts.append(types.Part.from_function_response(name=name, response=res))
+        elif name == "web_fetch":
+            res = {"text": await web_fetch(args.get("url", ""))}
+            tool_call_trace["response"] = res
+            tool_response_parts.append(types.Part.from_function_response(name=name, response=res))
+        elif name == "open_url_firefox":
+            result = launch_url_in_firefox(args.get("url"))
+            res = {"text": result}
+            tool_call_trace["response"] = res
+            tool_response_parts.append(
+                types.Part.from_function_response(
+                    name=name,
+                    response=res,
+                )
             )
         else:
             tool_call_trace["response"] = {"error": f"Tool {name} not found"}

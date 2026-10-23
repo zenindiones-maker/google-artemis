@@ -421,12 +421,15 @@ class VideoAnalyzer:
             llm_cfg.model if (llm_cfg and hasattr(llm_cfg, "model")) else "gemini-3.8-flash"
         )
 
+        local_only = os.environ.get("ARTEMIS_LOCAL_ONLY") == "1"
         has_google_key = bool(
-            settings.GOOGLE_API_KEY and settings.GOOGLE_API_KEY.get_secret_value()
+            not local_only
+            and settings.GOOGLE_API_KEY
+            and settings.GOOGLE_API_KEY.get_secret_value()
         )
 
-        # If client is already set on ctx or explicit Gemini configuration
-        self.client = getattr(ctx, "_genai_client", None)
+        # Strict local mode must ignore any previously shared Gemini client.
+        self.client = None if local_only else getattr(ctx, "_genai_client", None)
         if self.client is not None:
             self.use_native_gemini = True
         elif has_google_key and is_gemini_model(self.model_name):
@@ -477,6 +480,11 @@ class VideoAnalyzer:
         return " | ".join(lines)
 
     async def upload_and_poll_file(self, compressed_path: Path) -> any:
+        if os.environ.get("ARTEMIS_LOCAL_ONLY") == "1":
+            raise RuntimeError(
+                "Upload de vídeo ao Gemini bloqueado por ARTEMIS_LOCAL_ONLY=1. "
+                "Este modelo local não oferece análise nativa de vídeo."
+            )
         from artemis.agents.video_analyzer import gemini_files
 
         return await gemini_files.upload_and_poll_file(

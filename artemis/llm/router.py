@@ -232,6 +232,23 @@ def _patch_langchain_google_genai():
         logger.warning(f"Could not patch ChatGoogleGenerativeAI._process_tool_config: {e}")
 
 
+def _apply_local_only_endpoint(endpoint: ModelEndpoint) -> ModelEndpoint:
+    """Force every LLM endpoint to the local Ollama model when strict mode is enabled."""
+    if os.environ.get("ARTEMIS_LOCAL_ONLY") != "1":
+        return endpoint
+
+    model_name = os.environ.get("ARTEMIS_LOCAL_MODEL", "artemis-qwen-local:latest")
+    return endpoint.model_copy(
+        update={
+            "provider": ModelProvider.OLLAMA,
+            "model_name": model_name,
+            "api_key": "ollama-local",
+            "api_base": "http://127.0.0.1:11434/v1",
+            "is_multimodal": False,
+        }
+    )
+
+
 class ModelFactory:
     """Unified factory for instantiating and caching LangChain chat models across providers."""
 
@@ -239,6 +256,9 @@ class ModelFactory:
 
     @classmethod
     def get_model(cls, endpoint: ModelEndpoint) -> BaseChatModel:
+        # Normalize before cache lookup so local-only mode cannot reuse a
+        # model cached earlier under a remote provider's endpoint.
+        endpoint = _apply_local_only_endpoint(endpoint)
         key = endpoint.cache_key()
         if key not in cls._cache:
             cls._cache[key] = cls.create_model(endpoint)
@@ -246,6 +266,7 @@ class ModelFactory:
 
     @classmethod
     def create_model(cls, endpoint: ModelEndpoint) -> BaseChatModel:
+        endpoint = _apply_local_only_endpoint(endpoint)
         if os.environ.get("ARTEMIS_FAKE_LLM") == "1":
             from artemis.llm.fake_model import FakeChatModel
 

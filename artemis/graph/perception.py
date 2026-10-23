@@ -206,9 +206,8 @@ async def perception_node(state: State, ctx: ArtemisContext) -> dict:
     if ctx.data_engine:
         image_name = hashlib.sha256(latest_screenshot_bytes).hexdigest()
         screenshot_path = str(ctx.data_engine.get_image_path(image_name))
-        asyncio.create_task(
-            asyncio.to_thread(
-                ctx.data_engine.get_or_create_image,
+        ctx.data_engine._run_in_background(
+            lambda: ctx.data_engine.get_or_create_image(
                 latest_screenshot_bytes,
                 ui_tree=xml_hierarchy,
                 ocr_result=ocr_results,

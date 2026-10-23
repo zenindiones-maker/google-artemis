@@ -128,6 +128,8 @@ class Explorer(PerceptionToolsMixin, UniversalRunnerMixin, RunSetupMixin, Native
         client already shared on the context) the SDK cannot be constructed,
         so such configurations run through the universal LangChain engine.
         """
+        if os.environ.get("ARTEMIS_LOCAL_ONLY") == "1":
+            return False
         if not is_gemini_model(self.model_name):
             return False
         if getattr(self.ctx, "_genai_client", None) is not None:
@@ -142,6 +144,8 @@ class Explorer(PerceptionToolsMixin, UniversalRunnerMixin, RunSetupMixin, Native
         touch ``genai`` (and never fail on a missing Google key).  The client
         is stored on the context for connection pooling across agents.
         """
+        if os.environ.get("ARTEMIS_LOCAL_ONLY") == "1":
+            raise RuntimeError("Explorer: cliente Gemini bloqueado por ARTEMIS_LOCAL_ONLY=1.")
         client = getattr(self.ctx, "_genai_client", None)
         if client is None:
             logger.info("Initializing GenAI client on context for connection pooling (Explorer)")

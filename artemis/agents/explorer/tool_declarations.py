@@ -26,6 +26,55 @@ UNIVERSAL_EXPLORER_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "web_search",
+            "description": "Pesquisa a Internet pública e retorna títulos, URLs e trechos. Pode ser bloqueada pelo mecanismo de busca.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Consulta de pesquisa."},
+                    "max_results": {"type": "integer", "description": "Quantidade de resultados, de 1 a 8."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Lê texto de uma URL pública HTTP(S). Não executa scripts nem abre aplicativos.",
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string", "description": "URL pública HTTP(S)."}},
+                "required": ["url"],
+            },
+        },
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "open_url_firefox",
+            "description": (
+                "Abre uma URL HTTP(S) no Firefox somente após aprovação "
+                "explícita do usuário. Não executa comandos arbitrários."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL HTTP(S) absoluta a abrir após aprovação.",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+
+    {
+        "type": "function",
+        "function": {
             "name": "ask_perception_tool",
             "description": (
                 "[Perception] Concurrently executes and awaits three sub-tasks in parallel,"
@@ -186,6 +235,48 @@ UNIVERSAL_EXPLORER_TOOLS = [
 
 
 NATIVE_EXPLORER_TOOL_DECLARATIONS = [
+    types.FunctionDeclaration(
+        name="web_search",
+        description="Pesquisa a Internet pública e retorna títulos, URLs e trechos. A busca pode ser limitada pelo provedor.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "query": types.Schema(type=types.Type.STRING, description="Consulta de pesquisa."),
+                "max_results": types.Schema(type=types.Type.INTEGER, description="Quantidade de resultados, de 1 a 8."),
+            },
+            required=["query"],
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="web_fetch",
+        description="Lê texto de uma URL pública HTTP(S), sem executar scripts nem abrir aplicativos.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "url": types.Schema(type=types.Type.STRING, description="URL pública HTTP(S)."),
+            },
+            required=["url"],
+        ),
+    ),
+
+    types.FunctionDeclaration(
+        name="open_url_firefox",
+        description=(
+            "Solicita abertura de uma URL HTTP(S) no Firefox após "
+            "aprovação explícita do usuário. Sem aprovação, recusa."
+        ),
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "url": types.Schema(
+                    type=types.Type.STRING,
+                    description="URL HTTP(S) absoluta a abrir após aprovação.",
+                ),
+            },
+            required=["url"],
+        ),
+    ),
+
     types.FunctionDeclaration(
         name="ask_perception_tool",
         description=(
